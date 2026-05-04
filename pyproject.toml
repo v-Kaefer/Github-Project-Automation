@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "github-governance-bootstrap"
+version = "0.1.0"
+description = "Reusable GitHub governance bootstrap CLI for labels, milestones, projects, issues and sub-issues."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+governance = "governance_bootstrap.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["governance_bootstrap*"]

@@ -1,0 +1,185 @@
+{
+  "version": "1.0.0",
+  "repository": "v-Kaefer/Take-Your-Pills",
+  "mappingRationale": {
+    "phase:3_to_MS4": "Intentional mapping based on backlog: MS3 remains in phase:2 for Part 2 delivery consolidation."
+  },
+  "defaultIssueLabels": ["status:backlog"],
+  "phases": [
+    {
+      "phase": "phase:0",
+      "milestone": "MS0",
+      "stories": [
+        {
+          "storyId": "US-00",
+          "title": "US-00 | Estruturar repositório, Project, milestones e backlog inicial",
+          "labels": ["type:user-story", "priority:critical", "test:manual"],
+          "body": "Como equipe, queremos uma estrutura de repositório operacional para executar o projeto com rastreabilidade e revisão consistente.",
+          "tasks": [
+            "T-00.1 | Criar milestones MS0–MS6",
+            "T-00.2 | Criar GitHub Project com campos e views",
+            "T-00.3 | Criar labels base do fluxo",
+            "T-00.4 | Criar templates de User Story, Task, Bug e PR",
+            "T-00.5 | Publicar backlog inicial no repositório"
+          ]
+        }
+      ]
+    },
+    {
+      "phase": "phase:1",
+      "milestone": "MS1",
+      "stories": [
+        {
+          "storyId": "US-01",
+          "title": "US-01 | Implementar corrida lateral contínua e base de movimentação",
+          "labels": ["type:user-story", "priority:critical", "test:smoke"],
+          "body": "Como jogador, quero controlar uma corrida lateral contínua para que o jogo tenha um loop base imediatamente compreensível.",
+          "tasks": ["T-01.1 | Criar cena base do Player", "T-01.2 | Implementar corrida automática", "T-01.3 | Implementar input principal e estados básicos", "T-01.4 | Conectar player à cena Game"]
+        },
+        {
+          "storyId": "US-02",
+          "title": "US-02 | Implementar pulo, gravidade e aterrissagem",
+          "labels": ["type:user-story", "priority:critical", "test:smoke"],
+          "body": "Como jogador, quero pular e cair de forma previsível para conseguir evitar obstáculos com leitura rápida.",
+          "tasks": ["T-02.1 | Implementar input de pulo", "T-02.2 | Implementar gravidade", "T-02.3 | Implementar detecção de chão", "T-02.4 | Ajustar parâmetros de salto"]
+        },
+        {
+          "storyId": "US-03",
+          "title": "US-03 | Implementar colisão, derrota e restart",
+          "labels": ["type:user-story", "priority:critical", "test:smoke"],
+          "body": "Como jogador, quero morrer ao colidir com perigo para entender risco e consequência da run.",
+          "tasks": ["T-03.1 | Criar obstáculo base", "T-03.2 | Implementar colisão mortal", "T-03.3 | Implementar fluxo de derrota", "T-03.4 | Implementar restart da run"]
+        },
+        {
+          "storyId": "US-04",
+          "title": "US-04 | Implementar cenário inicial, câmera e instanciação básica",
+          "labels": ["type:user-story", "priority:high", "test:smoke"],
+          "body": "Como jogador, quero um cenário inicial legível para compreender o espaço de jogo e o movimento.",
+          "tasks": ["T-04.1 | Criar cena do cenário inicial", "T-04.2 | Implementar câmera 2D", "T-04.3 | Instanciar obstáculos básicos", "T-04.4 | Ajustar layout inicial para leitura"]
+        },
+        {
+          "storyId": "US-05",
+          "title": "US-05 | Implementar HUD mínima",
+          "labels": ["type:user-story", "priority:high", "test:smoke"],
+          "body": "Como jogador, quero uma HUD mínima para acompanhar informações essenciais da run.",
+          "tasks": ["T-05.1 | Criar estrutura base de HUD", "T-05.2 | Exibir score inicial", "T-05.3 | Exibir estado mínimo de run"]
+        }
+      ]
+    },
+    {
+      "phase": "phase:2",
+      "milestone": "MS2",
+      "stories": [
+        {
+          "storyId": "US-06",
+          "title": "US-06 | Implementar sistema de coleta",
+          "labels": ["type:user-story", "priority:critical", "test:smoke"],
+          "body": "Como jogador, quero coletar itens para acumular pontos e alimentar o loop de risco e recompensa.",
+          "tasks": ["T-06.1 | Criar CollectableBase", "T-06.2 | Implementar caixas e pílulas", "T-06.3 | Integrar coleta ao score", "T-06.4 | Adicionar feedback visual/sonoro mínimo"]
+        },
+        {
+          "storyId": "US-07",
+          "title": "US-07 | Implementar score, distância e feedback de pontuação",
+          "labels": ["type:user-story", "priority:critical", "test:smoke"],
+          "body": "Como jogador, quero um sistema de pontuação claro para perceber progresso e desempenho.",
+          "tasks": ["T-07.1 | Criar contador de score", "T-07.2 | Criar contador de distância", "T-07.3 | Integrar score e distância à HUD", "T-07.4 | Ajustar atualização visual da HUD"]
+        },
+        {
+          "storyId": "US-08",
+          "title": "US-08 | Implementar efeito adverso e variação de velocidade",
+          "labels": ["type:user-story", "priority:critical", "test:smoke"],
+          "body": "Como jogador, quero sentir o efeito adverso das pílulas ao acumular speed-ups para que o jogo tenha seu diferencial de risco.",
+          "tasks": ["T-08.1 | Criar contador de speed-ups", "T-08.2 | Implementar gatilho do estado adverso", "T-08.3 | Aplicar alteração temporária de velocidade", "T-08.4 | Exibir feedback do estado adverso"]
+        },
+        {
+          "storyId": "US-09",
+          "title": "US-09 | Implementar fluxo de menu inicial, pausa e game over",
+          "labels": ["type:user-story", "priority:high", "test:smoke"],
+          "body": "Como jogador, quero menus básicos para iniciar, pausar e reiniciar a run com clareza.",
+          "tasks": ["T-09.1 | Criar menu inicial", "T-09.2 | Criar pausa", "T-09.3 | Criar tela de game over", "T-09.4 | Conectar menu ao fluxo da run"]
+        },
+        {
+          "storyId": "US-10",
+          "title": "US-10 | Consolidar build da Parte 2",
+          "labels": ["type:user-story", "priority:critical", "test:manual"],
+          "body": "Como equipe, queremos uma build demonstrável da Parte 2 para cumprir checkpoints e entrega com estabilidade.",
+          "tasks": ["T-10.1 | Corrigir bugs críticos da Parte 2", "T-10.2 | Revisar fluxo principal", "T-10.3 | Preparar build/apresentação da Parte 2"]
+        }
+      ]
+    },
+    {
+      "phase": "phase:3",
+      "milestone": "MS4",
+      "stories": [
+        {
+          "storyId": "US-11",
+          "title": "US-11 | Implementar loja de upgrades enxuta (stretch)",
+          "labels": ["type:user-story", "type:stretch", "priority:low", "test:manual"],
+          "body": "Como jogador, quero uma loja simples de upgrades para transformar pontuação em progressão e rejogabilidade. (stretch)",
+          "tasks": ["T-11.1 | Definir moeda/recurso de compra", "T-11.2 | Criar interface da loja", "T-11.3 | Implementar compra e persistência mínima", "T-11.4 | Integrar loja ao fluxo da run"]
+        },
+        {
+          "storyId": "US-12",
+          "title": "US-12 | Implementar upgrades essenciais",
+          "labels": ["type:user-story", "priority:high", "test:smoke"],
+          "body": "Como jogador, quero upgrades essenciais para perceber evolução entre runs.",
+          "tasks": ["T-12.1 | Implementar pulo duplo", "T-12.2 | Implementar escudo temporário", "T-12.3 | Implementar dash", "T-12.4 | Implementar upgrade de multiplicador ou progressão equivalente"]
+        },
+        {
+          "storyId": "US-13",
+          "title": "US-13 | Implementar ranking local",
+          "labels": ["type:user-story", "priority:critical", "test:smoke"],
+          "body": "Como jogador, quero um ranking local para acompanhar minha melhora e perseguir recordes.",
+          "tasks": ["T-13.1 | Definir estrutura de dados do ranking local", "T-13.2 | Salvar ranking localmente", "T-13.3 | Carregar ranking ao abrir o jogo", "T-13.4 | Exibir ranking no menu/interface"]
+        },
+        {
+          "storyId": "US-14",
+          "title": "US-14 | Executar playtesting e consolidar ajustes",
+          "labels": ["type:user-story", "priority:critical", "test:manual"],
+          "body": "Como equipe, queremos usar playtesting para ajustar dificuldade, clareza e ritmo.",
+          "tasks": ["T-14.1 | Criar checklist de playtesting", "T-14.2 | Rodar sessão de playtesting", "T-14.3 | Consolidar feedback em bugs/ajustes", "T-14.4 | Aplicar ajustes críticos identificados"]
+        }
+      ]
+    },
+    {
+      "phase": "phase:4",
+      "milestone": "MS5",
+      "stories": [
+        {
+          "storyId": "US-15",
+          "title": "US-15 | Polir feedback visual e sonoro",
+          "labels": ["type:user-story", "priority:high", "test:manual"],
+          "body": "Como jogador, quero feedback audiovisual mais claro para sentir risco, recompensa e estado da run.",
+          "tasks": ["T-15.1 | Melhorar feedback de coleta", "T-15.2 | Melhorar feedback do efeito adverso", "T-15.3 | Melhorar feedback de derrota", "T-15.4 | Revisar áudio e legibilidade geral"]
+        },
+        {
+          "storyId": "US-16",
+          "title": "US-16 | Balancear dificuldade, economia e progressão",
+          "labels": ["type:user-story", "priority:critical", "test:manual"],
+          "body": "Como equipe, queremos balancear o jogo para que a experiência final seja justa, clara e apresentável.",
+          "tasks": ["T-16.1 | Balancear spawn de obstáculos", "T-16.2 | Balancear spawn de itens", "T-16.3 | Balancear custo/efeito dos upgrades", "T-16.4 | Balancear frequência e impacto do estado adverso"]
+        },
+        {
+          "storyId": "US-17",
+          "title": "US-17 | Fechar build final da Parte 3",
+          "labels": ["type:user-story", "priority:critical", "test:manual"],
+          "body": "Como equipe, queremos fechar uma build final estável para a primeira entrega da Parte 3.",
+          "tasks": ["T-17.1 | Executar checklist final de regressão", "T-17.2 | Corrigir bugs críticos finais", "T-17.3 | Gerar build final", "T-17.4 | Preparar material de apresentação/demo"]
+        }
+      ]
+    },
+    {
+      "phase": "phase:5",
+      "milestone": "MS6",
+      "stories": [
+        {
+          "storyId": "US-18",
+          "title": "US-18 | Ranking online (stretch goal)",
+          "labels": ["type:user-story", "type:stretch", "priority:low", "test:manual"],
+          "body": "Como jogador, quero ranking online para competir além da máquina local. (stretch)",
+          "tasks": ["T-18.1 | Definir arquitetura mínima para ranking online", "T-18.2 | Implementar envio de score", "T-18.3 | Implementar leitura de ranking", "T-18.4 | Integrar ranking online ao menu/interface"]
+        }
+      ]
+    }
+  ]
+}

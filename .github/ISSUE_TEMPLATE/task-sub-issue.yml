@@ -1,0 +1,46 @@
+name: "Task / Sub-issue"
+description: "Create a task linked to a User Story"
+title: "T-XX.X | "
+labels: ["type:task"]
+body:
+  - type: input
+    id: parent_story
+    attributes:
+      label: Parent User Story
+      placeholder: "US-XX / #<issue-number>"
+    validations:
+      required: true
+  - type: textarea
+    id: technical_scope
+    attributes:
+      label: Technical scope
+    validations:
+      required: true
+  - type: textarea
+    id: completion_criteria
+    attributes:
+      label: Completion criteria
+    validations:
+      required: true
+  - type: dropdown
+    id: test_strategy
+    attributes:
+      label: Expected test type
+      options:
+        - automated
+        - smoke
+        - manual
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Expected evidence
+    validations:
+      required: true
+  - type: textarea
+    id: dod
+    attributes:
+      label: Definition of Done (Task)
+    validations:
+      required: true

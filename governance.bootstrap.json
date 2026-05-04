@@ -1,0 +1,15 @@
+{
+  "labelsFile": "config/project/labels.json",
+  "milestonesFile": "config/project/milestones.json",
+  "projectDefinitionFile": "config/project/project-definition.json",
+  "backlogManifestFile": "config/stories/backlog-manifest.json",
+  "secretName": "GOVERNANCE_PAT",
+  "defaults": {
+    "dryRun": true,
+    "runLabels": true,
+    "runMilestones": true,
+    "runProjectCreation": false,
+    "runIssueGeneration": true,
+    "linkSubissues": true
+  }
+}

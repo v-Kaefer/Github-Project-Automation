@@ -1,0 +1,5 @@
+# Optional fallback ownership for governance files
+/.github/ @v-Kaefer
+/config/ @v-Kaefer
+/docs/repo/ @v-Kaefer
+/scripts/github/ @v-Kaefer

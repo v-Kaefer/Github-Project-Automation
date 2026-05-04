@@ -1,0 +1,29 @@
+{
+  "version": "1.0.0",
+  "reviewLayers": {
+    "task_to_phase": {
+      "requiredApprovals": 2,
+      "reviewerSource": "phase_responsible_pair"
+    },
+    "phase_to_develop": {
+      "requiredApprovals": 3,
+      "constraints": [
+        "at_least_1_phase_responsible",
+        "at_least_2_non_responsible_members"
+      ]
+    },
+    "develop_to_main": {
+      "requiredApprovals": 4,
+      "constraints": ["all_members"]
+    }
+  },
+  "phaseResponsiblePairs": {
+    "phase:0": ["TBD", "TBD"],
+    "phase:1": ["TBD", "TBD"],
+    "phase:2": ["TBD", "TBD"],
+    "phase:3": ["TBD", "TBD"],
+    "phase:4": ["TBD", "TBD"],
+    "phase:5": ["TBD", "TBD"],
+    "phase:6": ["TBD", "TBD"]
+  }
+}

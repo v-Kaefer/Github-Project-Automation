@@ -1,0 +1,100 @@
+name: Governance bootstrap (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_labels_sync:
+        description: "Sync labels from config/project/labels.json"
+        required: true
+        default: true
+        type: boolean
+      run_milestones_sync:
+        description: "Sync milestones from config/project/milestones.json"
+        required: true
+        default: true
+        type: boolean
+      run_issue_generation:
+        description: "Generate stories/tasks from config/stories/backlog-manifest.json"
+        required: true
+        default: true
+        type: boolean
+      run_project_creation:
+        description: "Create GitHub Project v2 from project-definition.json"
+        required: true
+        default: false
+        type: boolean
+      dry_run:
+        description: "Dry-run issue generation"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Sync labels
+        if: ${{ inputs.run_labels_sync }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GOVERNANCE_PAT }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            python -m governance_bootstrap labels sync --dry-run
+          else
+            python -m governance_bootstrap labels sync
+          fi
+
+      - name: Sync milestones
+        if: ${{ inputs.run_milestones_sync }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GOVERNANCE_PAT }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            python -m governance_bootstrap milestones sync --dry-run
+          else
+            python -m governance_bootstrap milestones sync
+          fi
+
+      - name: Validate repo quality baseline
+        run: |
+          ./scripts/validation/repo_quality.sh
+
+      - name: Create project v2
+        if: ${{ inputs.run_project_creation }}
+        env:
+          GH_TOKEN: ${{ secrets.GOVERNANCE_PAT }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            python -m governance_bootstrap project create --dry-run
+          else
+            python -m governance_bootstrap project create
+          fi
+
+      - name: Generate issues and tasks
+        if: ${{ inputs.run_issue_generation }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GOVERNANCE_PAT }}
+          GH_TOKEN: ${{ secrets.GOVERNANCE_PAT }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            python -m governance_bootstrap issues generate --dry-run
+          else
+            python -m governance_bootstrap issues generate --link-subissues
+          fi

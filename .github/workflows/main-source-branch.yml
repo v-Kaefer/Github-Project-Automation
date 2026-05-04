@@ -1,0 +1,33 @@
+name: Main source branch validation
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  validate-main-source:
+    name: validate-main-source
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ensure PR to main comes from develop
+        shell: bash
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          EXPECTED_REPO: ${{ github.repository }}
+        run: |
+          echo "Base: $BASE_REF"
+          echo "Head: $HEAD_REPO:$HEAD_REF"
+          if [[ "$BASE_REF" != "main" ]]; then
+            echo "This workflow only validates PRs targeting main."
+            exit 1
+          fi
+          if [[ "$HEAD_REPO" != "$EXPECTED_REPO" || "$HEAD_REF" != "develop" ]]; then
+            echo "PRs targeting main must come from $EXPECTED_REPO:develop." >&2
+            exit 1
+          fi

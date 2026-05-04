@@ -1,0 +1,52 @@
+name: "User Story"
+description: "Create a new user story item"
+title: "US-XX | "
+labels: ["type:user-story"]
+body:
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      placeholder: As a player/team, I want...
+    validations:
+      required: true
+  - type: textarea
+    id: value
+    attributes:
+      label: Value delivered
+    validations:
+      required: true
+  - type: input
+    id: milestone
+    attributes:
+      label: Milestone
+      placeholder: "MS0"
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: One criteria per bullet
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+  - type: dropdown
+    id: test_strategy
+    attributes:
+      label: Test strategy
+      options:
+        - automated
+        - smoke
+        - manual
+    validations:
+      required: true
+  - type: textarea
+    id: dod
+    attributes:
+      label: Definition of Done (Story)
+    validations:
+      required: true

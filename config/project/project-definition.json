@@ -1,0 +1,34 @@
+{
+  "name": "Take Your Pills - Delivery Board",
+  "description": "Operational board for phases, user stories, tasks, review layers and validation.",
+  "phaseMilestoneMap": {
+    "MS0": "F0",
+    "MS1": "F1",
+    "MS2": "F2",
+    "MS3": "F2",
+    "MS4": "F3",
+    "MS5": "F4",
+    "MS6": "F5"
+  },
+  "fields": [
+    {"name": "Phase", "type": "single_select", "options": ["F0","F1","F2","F3","F4","F5","F6"]},
+    {"name": "Milestone", "type": "single_select", "options": ["MS0","MS1","MS2","MS3","MS4","MS5","MS6"]},
+    {"name": "Item Type", "type": "single_select", "options": ["user-story","task","bug","repo","stretch"]},
+    {"name": "Priority", "type": "single_select", "options": ["critical","high","medium","low"]},
+    {"name": "Status", "type": "single_select", "options": ["backlog","ready","in-progress","review-phase","review-develop","review-main","qa-manual","done","blocked"]},
+    {"name": "Review Layer", "type": "single_select", "options": ["task->phase","phase->develop","develop->main"]},
+    {"name": "Test Type", "type": "single_select", "options": ["automated","smoke","manual"]},
+    {"name": "DoD Status", "type": "single_select", "options": ["not-started","partial","ready","done"]},
+    {"name": "Responsible Pair", "type": "text"},
+    {"name": "Target Branch", "type": "text"}
+  ],
+  "views": [
+    "Roadmap by milestone",
+    "Board by status",
+    "Current phase",
+    "In review",
+    "QA manual",
+    "Stretch backlog",
+    "Critical bugs"
+  ]
+}

@@ -1,0 +1,53 @@
+name: Governance bootstrap (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run without writing to GitHub"
+        required: true
+        default: true
+        type: boolean
+      run_project_creation:
+        description: "Create GitHub Project v2"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout consumer repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install governance CLI
+        run: |
+          python -m pip install "git+https://github.com/OWNER/github-governance-bootstrap.git@v0.1.0"
+
+      - name: Run bootstrap
+        env:
+          GITHUB_TOKEN: ${{ secrets.GOVERNANCE_PAT }}
+          GH_TOKEN: ${{ secrets.GOVERNANCE_PAT }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          args="--config governance.bootstrap.json"
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            args="$args --dry-run"
+          else
+            args="$args --no-dry-run --link-subissues"
+          fi
+          if [ "${{ inputs.run_project_creation }}" = "true" ]; then
+            args="$args --run-project-creation"
+          fi
+          governance bootstrap $args

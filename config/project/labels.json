@@ -1,0 +1,26 @@
+[
+  {"name":"type:user-story","color":"1D76DB","description":"📘 User story item"},
+  {"name":"type:task","color":"0E8A16","description":"🛠️ Implementation task"},
+  {"name":"type:bug","color":"D73A4A","description":"🐞 Bug report"},
+  {"name":"type:repo","color":"5319E7","description":"🏗️ Repository/governance work"},
+  {"name":"type:stretch","color":"FBCA04","description":"🌟 Stretch goal item"},
+
+  {"name":"priority:critical","color":"B60205","description":"🔥 Critical priority"},
+  {"name":"priority:high","color":"D93F0B","description":"⬆️ High priority"},
+  {"name":"priority:medium","color":"FBCA04","description":"➡️ Medium priority"},
+  {"name":"priority:low","color":"0E8A16","description":"⬇️ Low priority"},
+
+  {"name":"status:backlog","color":"C5DEF5","description":"📥 Backlog"},
+  {"name":"status:ready","color":"C5DEF5","description":"✅ Ready"},
+  {"name":"status:in-progress","color":"C5DEF5","description":"🚧 In progress"},
+  {"name":"status:review-phase","color":"C5DEF5","description":"👀 Review task->phase"},
+  {"name":"status:review-develop","color":"C5DEF5","description":"🧪 Review phase->develop"},
+  {"name":"status:review-main","color":"C5DEF5","description":"��️ Review develop->main"},
+  {"name":"status:qa-manual","color":"C5DEF5","description":"🧫 Manual QA"},
+  {"name":"status:done","color":"0E8A16","description":"🏁 Done"},
+  {"name":"status:blocked","color":"B60205","description":"⛔ Blocked"},
+
+  {"name":"test:automated","color":"0366D6","description":"🤖 Automated test"},
+  {"name":"test:smoke","color":"0366D6","description":"💨 Smoke test"},
+  {"name":"test:manual","color":"0366D6","description":"🧍 Manual test"}
+]
