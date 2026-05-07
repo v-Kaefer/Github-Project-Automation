@@ -1,21 +1,17 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 
+from .bootstrap import load_bootstrap_config, run_bootstrap
 from .auto_label import apply_auto_labels
+from .discovery import cmd_discover
 from .github import GitHubClient, get_token, require_client
 from .issue_milestones import sync_issue_milestones
 from .issues import generate_issues
 from .labels import sync_labels
 from .milestones import sync_milestones
 from .project import create_project, sync_project
-
-
-def load_bootstrap_config(path: str) -> dict:
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
 
 
 def repo_arg(value: str | None) -> str:
@@ -94,20 +90,17 @@ def cmd_bootstrap(args) -> int:
     run_issue_generation = args.run_issue_generation if args.run_issue_generation is not None else defaults.get("runIssueGeneration", True)
     link_subissues = args.link_subissues if args.link_subissues is not None else defaults.get("linkSubissues", False)
 
-    if run_labels:
-        print("==> Sync labels")
-        sync_labels(client, repo, config["labelsFile"], dry_run=dry_run)
-    if run_milestones:
-        print("==> Sync milestones")
-        sync_milestones(client, repo, config["milestonesFile"], dry_run=dry_run)
-    if run_project_creation:
-        print("==> Create project v2")
-        create_project(client, repo, config["projectDefinitionFile"], dry_run=dry_run)
-    if run_issue_generation:
-        print("==> Generate issues/tasks")
-        generate_issues(repo, config["backlogManifestFile"], dry_run=dry_run, link_subissues=link_subissues and not dry_run)
-
-    print("Governance bootstrap finished.")
+    run_bootstrap(
+        client,
+        repo,
+        config,
+        dry_run=dry_run,
+        run_labels=run_labels,
+        run_milestones=run_milestones,
+        run_project_creation=run_project_creation,
+        run_issue_generation=run_issue_generation,
+        link_subissues=link_subissues,
+    )
     return 0
 
 
@@ -181,6 +174,15 @@ def build_parser() -> argparse.ArgumentParser:
     auto_label_apply.add_argument("--labels-file", default="config/project/labels.json")
     auto_label_apply.add_argument("--dry-run", action="store_true")
     auto_label_apply.set_defaults(func=cmd_auto_label_apply)
+
+    discover = sub.add_parser("discover")
+    discover.add_argument("--repo", default=os.getenv("GITHUB_REPOSITORY"))
+    discover.add_argument("--config", default="governance.bootstrap.json")
+    discover.add_argument("--root", default=".")
+    discover.add_argument("--project-type")
+    discover.add_argument("--auto", action="store_true")
+    discover.add_argument("--apply", action="store_true")
+    discover.set_defaults(func=cmd_discover)
 
     bootstrap = sub.add_parser("bootstrap")
     bootstrap.add_argument("--repo", default=os.getenv("GITHUB_REPOSITORY"))

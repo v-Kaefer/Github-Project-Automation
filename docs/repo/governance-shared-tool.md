@@ -8,6 +8,7 @@ This repository now carries the reusable bootstrap engine as the Python package 
 - GitHub Project v2 creation and issue sync from `config/project/project-definition.json`.
 - Issue/task generation from `config/stories/backlog-manifest.json`.
 - Auto-label and issue milestone helpers.
+- Local shell wizard that checks for an existing PAT/gh auth session before running the bootstrap commands step by step.
 
 ## What Stays Project-Specific
 - Label names and colors.
@@ -22,6 +23,7 @@ This repository now carries the reusable bootstrap engine as the Python package 
 3. Give the token access to repo issues and Project v2 operations.
 4. Run the manual workflow with `dry_run=true`.
 5. Run again with `dry_run=false` when the dry-run output is correct.
+6. Use `bash scripts/github/bootstrap_local.sh` locally to read the guide, confirm you want to proceed, and step through the bootstrap commands.
 
 Use `docs/repo/governance-bootstrap.workflow-template.yml` as the consumer workflow template after publishing this package in its own repository. Replace `OWNER/github-governance-bootstrap` with the final shared-tool repository.
 
@@ -29,12 +31,12 @@ Local dry-run:
 
 ```bash
 export GH_TOKEN=...
-python -m governance_bootstrap bootstrap --repo owner/repo --dry-run
+bash scripts/github/bootstrap_local.sh --repo owner/repo
 ```
 
 Real bootstrap:
 
 ```bash
 export GH_TOKEN=...
-python -m governance_bootstrap bootstrap --repo owner/repo --no-dry-run --link-subissues
+bash scripts/github/bootstrap_local.sh --repo owner/repo
 ```

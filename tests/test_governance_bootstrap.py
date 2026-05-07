@@ -3,9 +3,11 @@ import os
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from governance_bootstrap.auto_label import infer_issue_labels
+from governance_bootstrap.discovery import detect_auth_status, detect_project_matches
 from governance_bootstrap.cli import main
 from governance_bootstrap.issue_milestones import milestone_from_body, parent_issue_number_from_body
 from governance_bootstrap.project import label_value
@@ -71,6 +73,83 @@ class GovernanceBootstrapTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertIn("[DRY-RUN] Would sync 1 labels", output.getvalue())
         self.assertIn("Governance bootstrap finished.", output.getvalue())
+
+    def test_discovery_prefers_env_token(self):
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "token-from-env", "GH_TOKEN": ""}, clear=False):
+            auth = detect_auth_status()
+
+        self.assertTrue(auth.configured)
+        self.assertEqual(auth.source, "environment")
+
+    def test_get_token_falls_back_to_gh_auth(self):
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "", "GH_TOKEN": ""}, clear=False), patch(
+            "governance_bootstrap.github.shutil.which", return_value="/usr/bin/gh"
+        ), patch("governance_bootstrap.github.subprocess.run") as run:
+            run.return_value = SimpleNamespace(returncode=0, stdout="token-from-gh\n")
+
+            from governance_bootstrap.github import get_token
+
+            token = get_token()
+
+        self.assertEqual(token, "token-from-gh")
+
+    def test_discovery_detects_project_markers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, "pyproject.toml"), "w", encoding="utf-8") as f:
+                f.write("[project]\nname = 'demo'\n")
+            with open(os.path.join(tmp, "package.json"), "w", encoding="utf-8") as f:
+                f.write('{"name":"demo"}')
+
+            matches = detect_project_matches(tmp)
+
+        self.assertGreaterEqual(len(matches), 2)
+        self.assertEqual(matches[0].project_type, "python")
+        self.assertIn("pyproject.toml", matches[0].markers)
+
+    def test_discover_auto_mode_reports_summary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = os.path.join(tmp, "governance.bootstrap.json")
+            root = os.path.join(tmp, "repo")
+            os.makedirs(root, exist_ok=True)
+            with open(os.path.join(root, "go.mod"), "w", encoding="utf-8") as f:
+                f.write("module example.com/demo\n")
+            with open(config, "w", encoding="utf-8") as f:
+                f.write(
+                    "{"
+                    '"secretName":"GOVERNANCE_PAT",'
+                    '"defaults":{"dryRun":true,"runLabels":true,"runMilestones":true,'
+                    '"runProjectCreation":false,"runIssueGeneration":true,"linkSubissues":true}'
+                    "}"
+                )
+
+            with patch.dict(os.environ, {"GITHUB_TOKEN": "token-from-env", "GH_TOKEN": ""}, clear=False):
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    result = main(["discover", "--repo", "owner/repo", "--config", config, "--root", root, "--auto"])
+
+        self.assertEqual(result, 0)
+        text = output.getvalue()
+        self.assertIn("Configured: yes (environment)", text)
+        self.assertIn("Detected project type: go", text)
+        self.assertIn("Recommended command", text)
+        self.assertIn("python -m governance_bootstrap bootstrap", text)
+
+    def test_discover_reports_missing_auth(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = os.path.join(tmp, "governance.bootstrap.json")
+            with open(config, "w", encoding="utf-8") as f:
+                f.write('{"secretName":"GOVERNANCE_PAT","defaults":{"dryRun":true}}')
+
+            with patch.dict(os.environ, {"GITHUB_TOKEN": "", "GH_TOKEN": ""}, clear=False), patch(
+                "governance_bootstrap.discovery.shutil.which", return_value=None
+            ):
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    result = main(["discover", "--repo", "owner/repo", "--config", config, "--auto"])
+
+        self.assertEqual(result, 1)
+        self.assertIn("Configured: no (missing)", output.getvalue())
+        self.assertIn("Expected workflow secret: GOVERNANCE_PAT", output.getvalue())
 
 
 if __name__ == "__main__":

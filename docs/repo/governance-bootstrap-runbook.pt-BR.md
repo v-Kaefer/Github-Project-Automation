@@ -14,6 +14,7 @@ Para criar/editar Project, labels, issues e sub-issues automaticamente, use uma 
    - `Read and write permissions` para o `GITHUB_TOKEN`;
    - criação e aprovação de PRs por GitHub Actions (se desejado).
 5. Para criar **Project v2**, autentique o `gh` com PAT contendo escopo `project` (além de `repo`).
+6. Antes de executar qualquer comando, rode `bash scripts/github/bootstrap_local.sh` para ver o guia, confirmar se quer prosseguir e seguir o fluxo passo a passo.
 
 ## 3) Como executar agora
 ### Opção A — Workflow manual (recomendado)
@@ -29,26 +30,22 @@ Para criar/editar Project, labels, issues e sub-issues automaticamente, use uma 
 gh auth login
 export GITHUB_REPOSITORY=v-Kaefer/Take-Your-Pills
 export GH_TOKEN=SEU_PAT_COM_PERMISSAO_PROJECT
-chmod +x scripts/github/bootstrap_local.sh
 
-# Primeiro teste
-python -m governance_bootstrap bootstrap --repo v-Kaefer/Take-Your-Pills --dry-run
-
-# Execução real
-python -m governance_bootstrap bootstrap --repo v-Kaefer/Take-Your-Pills --no-dry-run --link-subissues
+bash scripts/github/bootstrap_local.sh --repo v-Kaefer/Take-Your-Pills
 ```
 
-Os scripts em `scripts/github` continuam existindo por compatibilidade, mas delegam para a CLI reutilizável `governance_bootstrap`.
+O wizard local vive em `scripts/github/bootstrap_local.sh` e chama a CLI reutilizável `governance_bootstrap` por baixo.
 
 ### Verificação completa local (antes de PR)
 ```bash
 ./scripts/validation/repo_quality.sh
-python -m governance_bootstrap bootstrap --repo v-Kaefer/Take-Your-Pills --dry-run
+bash scripts/github/bootstrap_local.sh --repo v-Kaefer/Take-Your-Pills
 ```
 
 ## 4) Observações
 - Para reutilizar em outro projeto, copie/adapte os manifests em `config/project`, `config/stories` e `governance.bootstrap.json`.
 - O segredo esperado pelo workflow manual é `GOVERNANCE_PAT`.
+- O script local começa com um guia, pede confirmação para prosseguir e só depois confirma se `GITHUB_TOKEN`, `GH_TOKEN` ou `gh auth status` já estão configurados.
 - Responsáveis por fase estão `TBD` em `config/phases/phase-review-policy.json`.
 - Loja e ranking online estão marcados como stretch no manifesto.
 - Base de teste Godot definida como GDUnit4 em política de testes.

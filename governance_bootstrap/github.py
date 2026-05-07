@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
 import time
 import urllib.error
 import urllib.parse
@@ -24,7 +26,19 @@ class GitHubRequestError(RuntimeError):
 
 
 def get_token() -> str | None:
-    return os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        return token
+
+    gh = shutil.which("gh")
+    if not gh:
+        return None
+
+    result = subprocess.run([gh, "auth", "token"], capture_output=True, text=True)
+    if result.returncode != 0:
+        return None
+    token = result.stdout.strip()
+    return token or None
 
 
 def split_repo(repo: str) -> tuple[str, str]:
