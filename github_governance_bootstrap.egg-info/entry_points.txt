@@ -1,2 +1,0 @@
-[console_scripts]
-governance = governance_bootstrap.cli:main

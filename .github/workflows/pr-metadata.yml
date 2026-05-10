@@ -11,10 +11,18 @@ jobs:
   validate-pr-body:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Ensure required PR sections and issue link
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
-        run: python3 scripts/validation/validate_pr_body.py
+        run: |
+          required=("Linked Issue" "Summary" "How to test")
+          for section in "${required[@]}"; do
+            if ! echo "$PR_BODY" | grep -qF "## $section"; then
+              echo "Missing required PR section: ## $section" >&2
+              exit 1
+            fi
+          done
+          if ! echo "$PR_BODY" | grep -qE 'Closes #[0-9]+|Fixes #[0-9]+|Resolves #[0-9]+'; then
+            echo "PR body must reference a linked issue (e.g. Closes #123)" >&2
+            exit 1
+          fi

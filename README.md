@@ -1,71 +1,121 @@
-# Github-Project-Automation
-Repo made to store template for projects automations
+# GitHub Project Automation
 
+A reusable governance bootstrap toolkit for any GitHub project.  
+It syncs labels, milestones, and a Project v2 board, generates issues/tasks from a backlog manifest, and auto-labels issues and PRs — all driven by JSON config files you drop into your repo.
 
+---
 
-Para usar em outro repo, pense em duas partes:
+## How it works
 
-  1. Ferramenta genérica: governance_bootstrap
-  2. Configuração do projeto novo: manifests em config/project, config/stories e governance.bootstrap.json
+The toolkit has two parts:
 
-  Hoje a ferramenta ainda está neste repo. O caminho ideal é publicar/colocar esse pacote em um repo próprio, por exemplo github-governance-bootstrap, e depois
-  instalar no projeto consumidor.
+| Part | What it is |
+|---|---|
+| `governance_bootstrap` | Generic Python CLI — never needs editing |
+| `config/` + `governance.bootstrap.json` | Your project's data — edit these for every new project |
 
-  No outro repo
-  Copie e adapte estes arquivos/pastas:
+---
 
-  governance.bootstrap.json
-  config/project/labels.json
-  config/project/milestones.json
-  config/project/project-definition.json
-  config/stories/backlog-manifest.json
-  .github/workflows/governance-bootstrap.yml
+## Quick start
 
-  Depois edite:
+### 1. Copy config files into your repo
 
-  - labels.json: tipos, prioridades, status e labels do novo projeto.
-  - milestones.json: milestones e datas do novo projeto.
-  - project-definition.json: nome do board, campos, opções e phaseMilestoneMap.
-  - backlog-manifest.json: fases, histórias e tasks do novo projeto.
-  - workflow: use o segredo GOVERNANCE_PAT.
-  - wizard local: `scripts/github/bootstrap_local.sh` mostra um guia, pede confirmação para prosseguir e então conduz o bootstrap passo a passo.
+```
+governance.bootstrap.json
+config/project/labels.json
+config/project/milestones.json
+config/project/project-definition.json
+config/stories/backlog-manifest.json
+.github/workflows/governance-bootstrap.yml
+.github/workflows/auto-label.yml
+```
 
-  Autenticação
-  Crie no repo novo um secret:
+### 2. Edit the config files for your project
 
-  GOVERNANCE_PAT
+- **`labels.json`** — label names, colors, descriptions.
+- **`milestones.json`** — milestone titles and due dates.
+- **`project-definition.json`** — board name, custom fields, options and `phaseMilestoneMap`.
+- **`backlog-manifest.json`** — phases, user stories and tasks.
+- **`governance.bootstrap.json`** — points to the above files; set `dryRun`, `runLabels`, etc.
 
-  O PAT precisa conseguir mexer em:
+### 3. Add a repository secret
 
-  repo/issues
-  projects
-  read:org, se o repo estiver em org
+Create a secret named `GOVERNANCE_PAT` with a PAT that has:
+- `repo` (issues)
+- `project` (Project v2)
+- `read:org` (if the repo belongs to an org)
 
-  Rodar localmente
-  Depois que a ferramenta estiver instalada no ambiente:
+### 4. Run (GitHub Actions — recommended)
 
-  export GH_TOKEN=SEU_PAT
-  bash scripts/github/bootstrap_local.sh --repo owner/novo-repo
+1. Go to **Actions → Governance bootstrap (manual) → Run workflow**.
+2. Run with `dry_run = true` first to preview.
+3. Run with `dry_run = false` to apply.
 
-  Rodar pelo GitHub Actions
-  No repo novo, vá em:
+---
 
-  Actions -> Governance bootstrap (manual) -> Run workflow
+## Local CLI
 
-  Primeiro rode com dry_run=true. Depois rode com dry_run=false.
+Install the package:
 
-  Observação importante
-  Se você ainda não publicou a ferramenta em um repo próprio, o workflow template precisa apontar para onde ela vai ser instalada. O arquivo de referência está
-  aqui:
+```bash
+pip install -e .
+```
 
-  docs/repo/governance-bootstrap.workflow-template.yml
+Guided wizard (checks auth, detects project type, shows recommended command):
 
-  Nele, troque:
+```bash
+export GH_TOKEN=<your-PAT>
+python -m governance_bootstrap discover --repo owner/repo --config governance.bootstrap.json
+```
 
-  git+https://github.com/OWNER/github-governance-bootstrap.git@v0.1.0
+Run directly:
 
-  pelo repo real onde você publicar a ferramenta.
+```bash
+# Dry-run (safe preview)
+python -m governance_bootstrap bootstrap --repo owner/repo --dry-run
 
+# Apply
+python -m governance_bootstrap bootstrap --repo owner/repo --no-dry-run
+```
 
-Usado na branch develop de "Take Your Pills":
-codex resume 019df101-f17e-7bc0-adad-6191b08617b3
+Individual commands:
+
+```bash
+python -m governance_bootstrap labels sync --repo owner/repo
+python -m governance_bootstrap milestones sync --repo owner/repo
+python -m governance_bootstrap project create --repo owner/repo
+python -m governance_bootstrap issues generate --repo owner/repo --link-subissues
+python -m governance_bootstrap auto-label apply --repo owner/repo
+```
+
+---
+
+## Repository layout
+
+```
+governance_bootstrap/   # Generic CLI tool (Python package)
+config/
+  project/
+    labels.json             # Label definitions
+    milestones.json         # Milestone list and dates
+    project-definition.json # Project v2 board name, fields and views
+  stories/
+    backlog-manifest.json   # Phases, user stories and tasks
+  phases/
+    phase-review-policy.json
+governance.bootstrap.json   # Bootstrap entry point (paths + defaults)
+.github/workflows/
+  governance-bootstrap.yml  # Manual dispatch workflow
+  auto-label.yml            # Auto-labels issues and PRs on create/edit
+  branch-naming.yml         # Validates branch name pattern
+  main-source-branch.yml    # Ensures PRs to main come from develop
+  pr-metadata.yml           # Validates required PR sections
+```
+
+---
+
+## Authentication
+
+The CLI reads the token from `GITHUB_TOKEN` or `GH_TOKEN`.  
+If neither is set it falls back to `gh auth token` (if `gh` is installed).
+
