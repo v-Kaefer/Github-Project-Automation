@@ -1,5 +1,5 @@
 ## Linked Issue
-- Closes #<issue-number>
+- Closes #<issue-number>  <!-- use N/A if there is no linked issue: Closes #N/A -->
 
 ## Milestone
 - MS0

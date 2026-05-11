@@ -18,9 +18,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install governance tool
+        run: pip install -e . --quiet
+
       - name: Apply inferred labels
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_EVENT_PATH: ${{ github.event_path }}
-        run: python3 scripts/github/auto_label.py
+        run: python -m governance_bootstrap auto-label apply

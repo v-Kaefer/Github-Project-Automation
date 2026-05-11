@@ -288,9 +288,7 @@ def option_id(field: dict, option_name: str) -> str | None:
 def sync_issue_fields(client: GitHubClient, project_id: str, item_id: str, issue: dict, fields: dict, definition: dict, dry_run: bool = False) -> None:
     labels = issue.get("labels", [])
     milestone = milestone_from_issue(issue)
-    phase_map = definition.get("phaseMilestoneMap", {})
     mappings = {
-        "Phase": phase_map.get(milestone),
         "Item Type": label_value(labels, "type:"),
         "Priority": label_value(labels, "priority:"),
         "Status": label_value(labels, "status:"),

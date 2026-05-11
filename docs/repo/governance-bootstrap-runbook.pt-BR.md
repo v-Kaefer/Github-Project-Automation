@@ -1,54 +1,51 @@
-# Runbook — Bootstrap de governança
+# Runbook — Governance Bootstrap
 
-## 1) Permissões necessárias
-Para criar/editar Project, labels, issues e sub-issues automaticamente, use uma conta com:
-- acesso **Admin** ao repositório
-- permissão para **Projects** (Project v2)
-- token com escopos: `repo`, `project` e `read:org` (se necessário)
+## 1) Required permissions
+To create/edit Project, labels, issues and sub-issues automatically, use an account with:
+- **Admin** access to the repository
+- Permission for **Projects** (Project v2)
+- Token with scopes: `repo`, `project` and `read:org` (if the repo is in an org)
 
-## 2) Como conceder admin no GitHub
-1. Repositório -> **Settings** -> **Collaborators and teams**.
-2. Adicione o usuário/conta que executará as automações.
-3. Defina role **Admin**.
-4. Em **Settings -> Actions -> General**, permita:
-   - `Read and write permissions` para o `GITHUB_TOKEN`;
-   - criação e aprovação de PRs por GitHub Actions (se desejado).
-5. Para criar **Project v2**, autentique o `gh` com PAT contendo escopo `project` (além de `repo`).
+## 2) How to grant admin access on GitHub
+1. Repository → **Settings** → **Collaborators and teams**.
+2. Add the user/account that will run the automations.
+3. Set role to **Admin**.
+4. Under **Settings → Actions → General**, enable:
+   - `Read and write permissions` for the `GITHUB_TOKEN`;
+   - creation and approval of PRs by GitHub Actions (if desired).
+5. To create **Project v2**, authenticate `gh` with a PAT that includes the `project` scope (plus `repo`).
 
-## 3) Como executar agora
-### Opção A — Workflow manual (recomendado)
-1. Push desta branch.
-2. GitHub -> **Actions** -> `Governance bootstrap (manual)` -> **Run workflow**.
-3. Rodar `dry_run=true` primeiro.
-4. Rodar `dry_run=false` para criar labels, milestones, issues/tasks/sub-issues e Project, conforme os inputs escolhidos.
+## 3) How to run
 
-### Opção B — Local com script único
-> Segurança: evite colocar PAT diretamente no histórico do shell. Prefira carregar via gerenciador de segredos, arquivo de ambiente local não versionado, ou prompt interativo.
+### Option A — Manual workflow (recommended)
+1. Push this branch.
+2. GitHub → **Actions** → `Governance bootstrap (manual)` → **Run workflow**.
+3. Run with `dry_run=true` first to preview.
+4. Run with `dry_run=false` to apply labels, milestones, issues/tasks/sub-issues and Project.
+
+### Option B — Local CLI
+> Security: avoid putting your PAT directly in shell history. Prefer loading via a local unversioned env file, secret manager, or interactive prompt.
 
 ```bash
-gh auth login
-export GITHUB_REPOSITORY=v-Kaefer/Take-Your-Pills
-export GH_TOKEN=SEU_PAT_COM_PERMISSAO_PROJECT
-chmod +x scripts/github/bootstrap_local.sh
+export GH_TOKEN=<your-PAT-with-project-scope>
+export GITHUB_REPOSITORY=owner/repo
 
-# Primeiro teste
-python -m governance_bootstrap bootstrap --repo v-Kaefer/Take-Your-Pills --dry-run
+# Preview changes
+python -m governance_bootstrap bootstrap --repo owner/repo --dry-run
 
-# Execução real
-python -m governance_bootstrap bootstrap --repo v-Kaefer/Take-Your-Pills --no-dry-run --link-subissues
+# Apply
+python -m governance_bootstrap bootstrap --repo owner/repo --no-dry-run
 ```
 
-Os scripts em `scripts/github` continuam existindo por compatibilidade, mas delegam para a CLI reutilizável `governance_bootstrap`.
+Or use the guided `discover` wizard:
 
-### Verificação completa local (antes de PR)
 ```bash
-./scripts/validation/repo_quality.sh
-python -m governance_bootstrap bootstrap --repo v-Kaefer/Take-Your-Pills --dry-run
+python -m governance_bootstrap discover --repo owner/repo --config governance.bootstrap.json
 ```
 
-## 4) Observações
-- Para reutilizar em outro projeto, copie/adapte os manifests em `config/project`, `config/stories` e `governance.bootstrap.json`.
-- O segredo esperado pelo workflow manual é `GOVERNANCE_PAT`.
-- Responsáveis por fase estão `TBD` em `config/phases/phase-review-policy.json`.
-- Loja e ranking online estão marcados como stretch no manifesto.
-- Base de teste Godot definida como GDUnit4 em política de testes.
+## 4) Notes
+- To reuse in another project, copy and adapt the manifests in `config/project`, `config/stories` and `governance.bootstrap.json`.
+- The expected workflow secret is `GOVERNANCE_PAT`.
+- The `discover` command checks auth status, detects project type, and prints the recommended bootstrap command.
+- Milestone responsible pairs are `TBD` in `config/phases/phase-review-policy.json` — fill them in for your team.
+

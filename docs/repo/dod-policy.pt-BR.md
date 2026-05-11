@@ -11,7 +11,7 @@
 - Critérios de aceite atendidos
 - Validação registrada
 
-## DoD da fase
-- Objetivo da fase atingido
+## DoD do milestone
+- Objetivo do milestone atingido
 - Stories concluídas ou replanejadas com justificativa
 - Evidências de validação registradas

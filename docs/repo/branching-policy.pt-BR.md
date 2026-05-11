@@ -3,12 +3,12 @@
 ## Branches principais
 - `main`: entrega macro estável
 - `develop`: branch de integração
-- `phase/<nome-da-fase>`: branch da fase ativa
-- `feat/<fase>/<task>` ou `task/<fase>/<task>`: branch de implementação
+- `milestone/<nome-do-milestone>`: branch do milestone ativo
+- `feat/<milestone>/<task>` ou `task/<milestone>/<task>`: branch de implementação
 
 ## Camadas de merge
-1. task -> phase
-2. phase -> develop
+1. task -> milestone
+2. milestone -> develop
 3. develop -> main
 
 ## Convenção

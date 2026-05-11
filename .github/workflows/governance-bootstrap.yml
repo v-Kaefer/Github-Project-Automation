@@ -46,6 +46,9 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install governance tool
+        run: pip install -e . --quiet
+
       - name: Sync labels
         if: ${{ inputs.run_labels_sync }}
         env:
@@ -69,10 +72,6 @@ jobs:
           else
             python -m governance_bootstrap milestones sync
           fi
-
-      - name: Validate repo quality baseline
-        run: |
-          ./scripts/validation/repo_quality.sh
 
       - name: Create project v2
         if: ${{ inputs.run_project_creation }}

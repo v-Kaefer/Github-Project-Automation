@@ -16,7 +16,7 @@ jobs:
         run: |
           BRANCH="${{ github.head_ref }}"
           echo "Checking branch: $BRANCH"
-          if [[ ! "$BRANCH" =~ ^(feat|fix|docs|refactor|test|hotfix|phase|task)\/[a-z0-9._/-]+$ ]]; then
-            echo "Invalid branch naming. Use e.g. feat/repo-governance-bootstrap or task/phase-1/player-base" >&2
+          if [[ ! "$BRANCH" =~ ^(feat|fix|docs|refactor|test|hotfix|milestone|task|copilot)\/[a-z0-9._/-]+$ ]]; then
+            echo "Invalid branch naming. Use e.g. feat/repo-governance-bootstrap or milestone/m1-setup" >&2
             exit 1
           fi

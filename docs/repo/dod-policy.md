@@ -11,7 +11,7 @@
 - Acceptance criteria met
 - Validation registered
 
-## Phase DoD
-- Phase objective reached
+## Milestone DoD
+- Milestone objective reached
 - Stories complete or explicitly replanned
 - Validation evidence recorded

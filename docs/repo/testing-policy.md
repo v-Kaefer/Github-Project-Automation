@@ -5,9 +5,6 @@
 2. Smoke test
 3. Documented manual test (fallback)
 
-## Godot stack
-- Preferred framework: GDUnit4.
-
 ## Validation strategy
 - pre-push: fast checks
 - CI: broader checks

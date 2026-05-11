@@ -3,7 +3,7 @@
   "milestonesFile": "config/project/milestones.json",
   "projectDefinitionFile": "config/project/project-definition.json",
   "backlogManifestFile": "config/stories/backlog-manifest.json",
-  "secretName": "GOVERNANCE_PAT",
+  "workflowVar": "GOVERNANCE_PAT",
   "defaults": {
     "dryRun": true,
     "runLabels": true,
