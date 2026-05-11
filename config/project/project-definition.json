@@ -1,14 +1,7 @@
 {
   "name": "My Project Board",
-  "description": "Operational board for phases, user stories, tasks, review layers and validation.",
-  "phaseMilestoneMap": {
-    "M0": "F0",
-    "M1": "F1",
-    "M2": "F2",
-    "M3": "F3"
-  },
+  "description": "Operational board for milestones, user stories, tasks, review layers and validation.",
   "fields": [
-    {"name": "Phase", "type": "single_select", "options": ["F0","F1","F2","F3"]},
     {"name": "Milestone", "type": "single_select", "options": ["M0","M1","M2","M3"]},
     {"name": "Item Type", "type": "single_select", "options": ["user-story","task","bug","repo","stretch"]},
     {"name": "Priority", "type": "single_select", "options": ["critical","high","medium","low"]},
@@ -20,7 +13,7 @@
   "views": [
     "Board by status",
     "Roadmap by milestone",
-    "Current phase",
+    "Current milestone",
     "In review"
   ]
 }

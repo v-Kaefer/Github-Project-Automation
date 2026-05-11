@@ -52,7 +52,7 @@ class GovernanceBootstrapTests(unittest.TestCase):
             with open(project, "w", encoding="utf-8") as f:
                 f.write('{"name":"Board","fields":[]}')
             with open(backlog, "w", encoding="utf-8") as f:
-                f.write('{"phases":[]}')
+                f.write('{"milestones":[]}')
             with open(config, "w", encoding="utf-8") as f:
                 f.write(
                     "{"
@@ -116,7 +116,7 @@ class GovernanceBootstrapTests(unittest.TestCase):
             with open(config, "w", encoding="utf-8") as f:
                 f.write(
                     "{"
-                    '"secretName":"GOVERNANCE_PAT",'
+                    '"workflowVar":"GOVERNANCE_PAT",'
                     '"defaults":{"dryRun":true,"runLabels":true,"runMilestones":true,'
                     '"runProjectCreation":false,"runIssueGeneration":true,"linkSubissues":true}'
                     "}"
@@ -138,7 +138,7 @@ class GovernanceBootstrapTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             config = os.path.join(tmp, "governance.bootstrap.json")
             with open(config, "w", encoding="utf-8") as f:
-                f.write('{"secretName":"GOVERNANCE_PAT","defaults":{"dryRun":true}}')
+                f.write('{"workflowVar":"GOVERNANCE_PAT","defaults":{"dryRun":true}}')
 
             with patch.dict(os.environ, {"GITHUB_TOKEN": "", "GH_TOKEN": ""}, clear=False), patch(
                 "governance_bootstrap.discovery.shutil.which", return_value=None

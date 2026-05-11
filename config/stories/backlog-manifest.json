@@ -2,9 +2,8 @@
   "version": "1.0.0",
   "repository": "owner/repo",
   "defaultIssueLabels": ["status:backlog"],
-  "phases": [
+  "milestones": [
     {
-      "phase": "phase:0",
       "milestone": "M0",
       "stories": [
         {
@@ -26,12 +25,11 @@
       ]
     },
     {
-      "phase": "phase:1",
       "milestone": "M1",
       "stories": [
         {
           "storyId": "US-01",
-          "title": "US-01 | Example user story for phase 1",
+          "title": "US-01 | Example user story for milestone 1",
           "labels": ["type:user-story", "priority:high", "test:automated"],
           "body": "As a user, I want an example feature so I can understand the story format.",
           "acceptanceCriteria": "- Acceptance criterion 1\n- Acceptance criterion 2",

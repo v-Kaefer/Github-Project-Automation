@@ -3,12 +3,12 @@
 ## Main branches
 - `main`: stable macro delivery
 - `develop`: integration branch
-- `phase/<phase-name>`: active phase branch
-- `feat/<phase>/<task-name>` or `task/<phase>/<task-name>`: implementation branch
+- `milestone/<milestone-name>`: active milestone branch
+- `feat/<milestone>/<task-name>` or `task/<milestone>/<task-name>`: implementation branch
 
 ## Merge layers
-1. task -> phase
-2. phase -> develop
+1. task -> milestone
+2. milestone -> develop
 3. develop -> main
 
 ## Naming

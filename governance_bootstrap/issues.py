@@ -49,8 +49,8 @@ def add_sub_issue(repo: str, parent_number: int, child_number: int) -> None:
 def load_backlog(path: str) -> dict:
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    if "phases" not in data:
-        raise ValueError("backlog manifest must contain phases")
+    if "milestones" not in data:
+        raise ValueError("backlog manifest must contain milestones")
     return data
 
 
@@ -61,15 +61,15 @@ def generate_issues(repo: str, manifest: str, dry_run: bool = False, link_subiss
         raise SystemExit("Missing --repo and GITHUB_REPOSITORY")
 
     data = load_backlog(manifest)
-    for phase in data["phases"]:
-        for story in phase["stories"]:
+    for milestone_entry in data["milestones"]:
+        for story in milestone_entry["stories"]:
             story_labels = list(dict.fromkeys(story["labels"] + data.get("defaultIssueLabels", [])))
             story_body = (
                 f"{story['body']}\n\n"
                 f"## Acceptance criteria\n{story.get('acceptanceCriteria', '- TBD')}\n\n"
                 f"## Test strategy\n{story.get('testStrategy', '- TBD')}\n\n"
                 f"## Definition of Done\n{story.get('dod', '- TBD')}\n\n"
-                f"- Milestone: {phase['milestone']}\n"
+                f"- Milestone: {milestone_entry['milestone']}\n"
                 f"- Item type: user-story\n"
             )
             if dry_run:

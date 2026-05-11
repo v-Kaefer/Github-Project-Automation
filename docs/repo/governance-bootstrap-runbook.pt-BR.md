@@ -47,5 +47,5 @@ python -m governance_bootstrap discover --repo owner/repo --config governance.bo
 - To reuse in another project, copy and adapt the manifests in `config/project`, `config/stories` and `governance.bootstrap.json`.
 - The expected workflow secret is `GOVERNANCE_PAT`.
 - The `discover` command checks auth status, detects project type, and prints the recommended bootstrap command.
-- Phase responsible pairs are `TBD` in `config/phases/phase-review-policy.json` — fill them in for your team.
+- Milestone responsible pairs are `TBD` in `config/phases/phase-review-policy.json` — fill them in for your team.
 

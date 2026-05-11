@@ -166,7 +166,8 @@ def cmd_discover(args) -> int:
     else:
         print(f"Configured: no ({auth.source})")
         print(auth.detail)
-        print(f"Expected workflow secret: {config.get('secretName', 'GOVERNANCE_PAT')}")
+        pat_name = config.get("workflowVar", "GOVERNANCE_PAT")
+        print(f"Expected workflow secret: {pat_name}")
         return 1
 
     print("==> Project detection")

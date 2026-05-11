@@ -13,8 +13,8 @@ This repository carries the reusable bootstrap engine as the Python package `gov
 ## What Stays Project-Specific
 - Label names and colors.
 - Milestone names and dates.
-- Project board name, fields, options, views and `phaseMilestoneMap`.
-- Backlog phases, user stories, tasks and default labels.
+- Project board name, fields, options and views.
+- Backlog milestones, user stories, tasks and default labels.
 - The target repository passed with `--repo owner/repo`.
 
 ## Consumer Setup
