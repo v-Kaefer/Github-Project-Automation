@@ -42,7 +42,7 @@ def detect_auth_status() -> AuthStatus:
 
     gh = shutil.which("gh")
     if gh:
-        result = subprocess.run([gh, "auth", "status", "--hostname", "github.com"], capture_output=True, text=True)
+        result = subprocess.run([gh, "auth", "status", "--hostname", "github.com"], capture_output=True, text=True, timeout=10)
         if result.returncode == 0:
             return AuthStatus(True, "gh", "gh auth status succeeded")
         detail = (result.stderr or result.stdout or "gh auth status failed").strip()

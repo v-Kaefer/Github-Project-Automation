@@ -35,7 +35,7 @@ config/stories/backlog-manifest.json
 - **`labels.json`** — label names, colors, descriptions.
 - **`milestones.json`** — milestone titles and due dates.
 - **`project-definition.json`** — board name, custom fields, options and views.
-- **`backlog-manifest.json`** — phases, user stories and tasks.
+- **`backlog-manifest.json`** — milestones, user stories and tasks.
 - **`governance.bootstrap.json`** — points to the above files; set `dryRun`, `runLabels`, etc.
 
 ### 3. Add a repository secret
