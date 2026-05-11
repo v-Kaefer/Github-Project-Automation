@@ -9,6 +9,8 @@ permissions:
 
 jobs:
   validate-pr-body:
+    # Draft PRs are works-in-progress; skip validation until they are marked ready.
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
       - name: Ensure required PR sections and issue link
@@ -22,7 +24,9 @@ jobs:
               exit 1
             fi
           done
-          if ! echo "$PR_BODY" | grep -qE 'Closes #[0-9]+|Fixes #[0-9]+|Resolves #[0-9]+'; then
-            echo "PR body must reference a linked issue (e.g. Closes #123)" >&2
+          # Accept a real issue number (Closes/Fixes/Resolves #NNN) or an explicit N/A
+          # when there is genuinely no linked issue.
+          if ! echo "$PR_BODY" | grep -qE 'Closes #[0-9]+|Fixes #[0-9]+|Resolves #[0-9]+|Closes #[Nn][/\\]?[Aa]|#N/A|#n/a'; then
+            echo "PR body must reference a linked issue (e.g. Closes #123) or mark it as not applicable (Closes #N/A)" >&2
             exit 1
           fi
