@@ -1,4 +1,11 @@
+ifeq ($(OS),Windows_NT)
+PYTHON ?= python
+DETECTED_OS := Windows
+else
 PYTHON ?= python3
+DETECTED_OS := POSIX
+endif
+
 PIP ?= $(PYTHON) -m pip
 TARGET ?=
 REPO ?=
@@ -14,12 +21,17 @@ WORKDIR := $(if $(strip $(TARGET)),$(TARGET),.)
 FORCE_FLAG := $(if $(filter 1 true yes on,$(FORCE)),--force,)
 OWNER_FLAG := $(if $(strip $(OWNER)),--owner "$(OWNER)",)
 PROJECT_TYPE_FLAG := $(if $(strip $(PROJECT_TYPE)),--project-type "$(PROJECT_TYPE)",)
-DRY_RUN_FLAG := $(if $(filter 1 true yes on,$(LIVE)),,--dry-run)
+EXECUTION_FLAG := $(if $(filter 1 true yes on,$(LIVE)),--live,--dry-run)
 
-.PHONY: help install dev-install compile test quality check doctor discover require-target require-repo require-project-number init init-dry plan apply setup setup-live labels milestones issues project-create project-sync clean clean-generated
+.PHONY: help install dev-install compile test quality check doctor discover init init-dry plan apply setup setup-live labels milestones issues project-create project-sync clean clean-generated
+
+define require_value
+$(if $(strip $($(1))),,$(error ERROR: $(1) is required. Fix: $(2)))
+endef
 
 help:
 	@echo "GitHub Project Setup"
+	@echo "Detected environment: $(DETECTED_OS); Python command: $(PYTHON)"
 	@echo ""
 	@echo "First-time local setup:"
 	@echo "  1. Copy .env.example to .env"
@@ -31,19 +43,20 @@ help:
 	@echo "  make install                         Install the CLI"
 	@echo "  make dev-install                     Install in editable mode"
 	@echo "  make check                           Validate committed files, compile and run tests"
-	@echo "  make doctor                          Inspect .env, token and configuration availability"
+	@echo "  make doctor                          Inspect OS, .env, gh auth and configuration"
 	@echo "  make clean                           Remove local Python/build artifacts"
 	@echo ""
 	@echo "Repository analysis and setup:"
 	@echo "  make discover TARGET=../project REPO=owner/repo"
 	@echo "  make discover TARGET=../project REPO=owner/repo PROJECT_TYPE=python"
+	@echo "  make init-dry TARGET=../project      Preview copied automation files"
 	@echo "  make init TARGET=../project          Copy core automation files"
-	@echo "  make init TARGET=../project PROFILE=godot"
 	@echo "  make init TARGET=../project FORCE=1  Replace existing managed files"
 	@echo "  make plan TARGET=../project REPO=owner/repo"
-	@echo "  make apply TARGET=../project REPO=owner/repo"
-	@echo "  make setup TARGET=../project REPO=owner/repo       Init + dry-run"
-	@echo "  make setup-live TARGET=../project REPO=owner/repo  Init + live apply"
+	@echo "  make apply TARGET=../project REPO=owner/repo             Dry-run by default"
+	@echo "  make apply TARGET=../project REPO=owner/repo LIVE=1      Apply changes"
+	@echo "  make setup TARGET=../project REPO=owner/repo             Init + dry-run"
+	@echo "  make setup-live TARGET=../project REPO=owner/repo        Init + live apply"
 	@echo ""
 	@echo "Individual operations (dry-run by default):"
 	@echo "  make labels REPO=owner/repo"
@@ -82,48 +95,55 @@ doctor:
 	@echo "==> Inspecting local setup (read-only)"
 	$(PYTHON) -m project_setup doctor --config "$(CONFIG)"
 
-require-target:
-	@test -n "$(TARGET)" || (echo "ERROR: TARGET is required." >&2; echo "  Fix: use TARGET=../my-project" >&2; exit 2)
-
-require-repo:
-	@test -n "$(REPO)" || (echo "ERROR: REPO is required." >&2; echo "  Fix: use REPO=owner/repository" >&2; exit 2)
-
-require-project-number:
-	@test -n "$(PROJECT_NUMBER)" || (echo "ERROR: PROJECT_NUMBER is required." >&2; echo "  Fix: use PROJECT_NUMBER=1" >&2; exit 2)
-
-discover: require-target require-repo
+discover:
+	$(call require_value,TARGET,use TARGET=../my-project)
+	$(call require_value,REPO,use REPO=owner/repository)
 	$(PYTHON) -m project_setup discover --repo "$(REPO)" --config "$(CONFIG)" --root "$(TARGET)" $(PROJECT_TYPE_FLAG) --auto
 
-init: require-target
-	$(PYTHON) -m project_setup init --target "$(TARGET)" --profile "$(PROFILE)" $(FORCE_FLAG)
+init:
+	$(call require_value,TARGET,use TARGET=../my-project)
+	$(PYTHON) -m project_setup init --target "$(TARGET)" --profile "$(PROFILE)" $(FORCE_FLAG) --live
 
-init-dry: require-target
+init-dry:
+	$(call require_value,TARGET,use TARGET=../my-project)
 	$(PYTHON) -m project_setup init --target "$(TARGET)" --profile "$(PROFILE)" $(FORCE_FLAG) --dry-run
 
-plan: require-repo
+plan:
+	$(call require_value,REPO,use REPO=owner/repository)
 	cd "$(WORKDIR)" && $(PYTHON) -m project_setup apply --repo "$(REPO)" --config "$(CONFIG)" --dry-run
 
-apply: require-repo
-	cd "$(WORKDIR)" && $(PYTHON) -m project_setup apply --repo "$(REPO)" --config "$(CONFIG)" --no-dry-run
+apply:
+	$(call require_value,REPO,use REPO=owner/repository)
+	cd "$(WORKDIR)" && $(PYTHON) -m project_setup apply --repo "$(REPO)" --config "$(CONFIG)" $(EXECUTION_FLAG)
 
 setup: init plan
 
-setup-live: init apply
+setup-live:
+	$(call require_value,TARGET,use TARGET=../my-project)
+	$(call require_value,REPO,use REPO=owner/repository)
+	$(MAKE) --no-print-directory init TARGET="$(TARGET)" PROFILE="$(PROFILE)" FORCE="$(FORCE)"
+	$(MAKE) --no-print-directory apply TARGET="$(TARGET)" REPO="$(REPO)" CONFIG="$(CONFIG)" LIVE=1
 
-labels: require-repo
-	cd "$(WORKDIR)" && $(PYTHON) -m project_setup labels sync --repo "$(REPO)" --file config/project/labels.json $(DRY_RUN_FLAG)
+labels:
+	$(call require_value,REPO,use REPO=owner/repository)
+	cd "$(WORKDIR)" && $(PYTHON) -m project_setup labels sync --repo "$(REPO)" --file config/project/labels.json $(EXECUTION_FLAG)
 
-milestones: require-repo
-	cd "$(WORKDIR)" && $(PYTHON) -m project_setup milestones sync --repo "$(REPO)" --file config/project/milestones.json $(DRY_RUN_FLAG)
+milestones:
+	$(call require_value,REPO,use REPO=owner/repository)
+	cd "$(WORKDIR)" && $(PYTHON) -m project_setup milestones sync --repo "$(REPO)" --file config/project/milestones.json $(EXECUTION_FLAG)
 
-issues: require-repo
-	cd "$(WORKDIR)" && $(PYTHON) -m project_setup issues generate --repo "$(REPO)" --file config/stories/backlog-manifest.json $(DRY_RUN_FLAG)
+issues:
+	$(call require_value,REPO,use REPO=owner/repository)
+	cd "$(WORKDIR)" && $(PYTHON) -m project_setup issues generate --repo "$(REPO)" --file config/stories/backlog-manifest.json $(EXECUTION_FLAG)
 
-project-create: require-repo
-	cd "$(WORKDIR)" && $(PYTHON) -m project_setup project create --repo "$(REPO)" --file config/project/project-definition.json $(DRY_RUN_FLAG)
+project-create:
+	$(call require_value,REPO,use REPO=owner/repository)
+	cd "$(WORKDIR)" && $(PYTHON) -m project_setup project create --repo "$(REPO)" --file config/project/project-definition.json $(EXECUTION_FLAG)
 
-project-sync: require-repo require-project-number
-	cd "$(WORKDIR)" && $(PYTHON) -m project_setup project sync --repo "$(REPO)" --project-number "$(PROJECT_NUMBER)" $(OWNER_FLAG) --file config/project/project-definition.json $(DRY_RUN_FLAG)
+project-sync:
+	$(call require_value,REPO,use REPO=owner/repository)
+	$(call require_value,PROJECT_NUMBER,use PROJECT_NUMBER=1)
+	cd "$(WORKDIR)" && $(PYTHON) -m project_setup project sync --repo "$(REPO)" --project-number "$(PROJECT_NUMBER)" $(OWNER_FLAG) --file config/project/project-definition.json $(EXECUTION_FLAG)
 
 clean-generated:
 	@$(PYTHON) -c "from pathlib import Path; import shutil; [shutil.rmtree(path, ignore_errors=True) for path in list(Path('.').rglob('__pycache__'))]; [path.unlink(missing_ok=True) for pattern in ('*.pyc','*.pyo') for path in list(Path('.').rglob(pattern))]"
