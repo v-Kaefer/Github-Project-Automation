@@ -1,0 +1,45 @@
+name: Godot smoke check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: godot-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Verify project.godot exists
+        id: has_project
+        shell: bash
+        run: |
+          if [ -f project.godot ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Godot
+        if: steps.has_project.outputs.exists == 'true'
+        uses: firebelley/setup-godot@v1
+        with:
+          godot-version: "4.2.2"
+
+      - name: Run headless smoke check
+        if: steps.has_project.outputs.exists == 'true'
+        run: godot --headless --quit
+
+      - name: Skip smoke check
+        if: steps.has_project.outputs.exists != 'true'
+        run: echo "Skipping smoke check because project.godot was not found."
