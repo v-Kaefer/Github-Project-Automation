@@ -28,7 +28,6 @@ CORE_TEMPLATE_FILES = (
 
 PROFILE_FILES = {
     "core": (),
-    "godot": (("templates/profiles/godot/.github/workflows/godot-smoke.yml", ".github/workflows/godot-smoke.yml"),),
 }
 
 
@@ -70,9 +69,10 @@ def install_repository(
 ) -> InstallResult:
     source_root = Path(source).resolve() if source else source_root_from_package()
     target_root = Path(target).resolve()
-    target_root.mkdir(parents=True, exist_ok=True)
-    if not target_root.is_dir():
+    if target_root.exists() and not target_root.is_dir():
         raise ValueError(f"Target is not a directory: {target_root}")
+    if not dry_run:
+        target_root.mkdir(parents=True, exist_ok=True)
 
     copied: list[str] = []
     skipped: list[str] = []
