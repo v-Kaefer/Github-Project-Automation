@@ -10,29 +10,49 @@ on:
         required: true
         default: true
         type: boolean
+      run_project_creation:
+        description: "Create Project v2 (requires PROJECT_SETUP_PAT for live runs)"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
   issues: write
-  pull-requests: write
 
 jobs:
   setup:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+      - name: Require PAT for live Project v2 creation
+        if: ${{ inputs.run_project_creation && !inputs.dry_run }}
+        env:
+          PROJECT_SETUP_PAT: ${{ secrets.PROJECT_SETUP_PAT }}
+        run: |
+          if [ -z "${PROJECT_SETUP_PAT:-}" ]; then
+            echo "::error title=PROJECT_SETUP_PAT is required::Create a classic PAT with repo and project scopes and save it as the PROJECT_SETUP_PAT Actions secret."
+            exit 1
+          fi
       - name: Run project setup
         env:
-          GITHUB_TOKEN: ${{ secrets.PROJECT_SETUP_PAT || github.token }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ github.token }}
+          PROJECT_SETUP_PAT: ${{ secrets.PROJECT_SETUP_PAT }}
         run: |
+          args=""
           if [ "${{ inputs.dry_run }}" = "true" ]; then
-            python -m project_setup apply --dry-run
+            args="$args --dry-run"
           else
-            python -m project_setup apply --no-dry-run
+            args="$args --no-dry-run"
           fi
+          if [ "${{ inputs.run_project_creation }}" = "true" ]; then
+            args="$args --run-project-creation"
+          else
+            args="$args --skip-project-creation"
+          fi
+          python -m project_setup apply $args
