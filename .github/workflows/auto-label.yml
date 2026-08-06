@@ -9,7 +9,6 @@ on:
 permissions:
   contents: read
   issues: write
-  pull-requests: read
 
 concurrency:
   group: auto-label-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
@@ -20,19 +19,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout trusted repository automation
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.base.sha || github.sha }}
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
       - name: Apply inferred labels
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_EVENT_PATH: ${{ github.event_path }}
         run: python -m project_setup auto-label apply
