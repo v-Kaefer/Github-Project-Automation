@@ -14,14 +14,15 @@
 ## Main capabilities
 
 - Manual operation through Make targets.
-- Safe dry-run defaults.
+- Safe dry-run defaults for every mutating CLI command.
+- Explicit `--live` or `LIVE=1` confirmation before writes.
 - Guided repository discovery through the Python CLI.
 - Embedded workflows, templates, manifests, and validation scripts.
+- Native Windows detection in the Makefile.
 - Local `.env` loading without external dependencies.
 - Standard `github.token` for repository-scoped Actions operations.
 - Explicit `PROJECT_SETUP_PAT` requirement for GitHub Projects v2.
 - Actionable diagnostics with a `Fix:` instruction for validation errors.
-- Core and optional Godot profiles.
 
 <a id="setup"></a>
 
@@ -34,6 +35,12 @@
 - GNU Make for the Makefile interface;
 - permission to modify the target GitHub repository;
 - a personal access token only for live GitHub Projects v2 operations.
+
+The Makefile detects `OS=Windows_NT`. It uses `python` on Windows and `python3` on Linux, macOS, Git Bash, and WSL. The command can still be overridden:
+
+```powershell
+make PYTHON=py check
+```
 
 The Python CLI can be used without Make:
 
@@ -49,7 +56,7 @@ make check
 
 The command runs three local stages:
 
-1. validate required and committed files, JSON, and package metadata;
+1. validate required and committed files, JSON, script references, and package metadata;
 2. compile Python sources;
 3. run unit tests.
 
@@ -90,7 +97,7 @@ Run the read-only diagnostic:
 make doctor
 ```
 
-`make doctor` validates `.env`, `project_setup.json`, and the referenced manifest files. It never prints token values and does not write to GitHub.
+`make doctor` reports the operating system, Python executable, `.env`, configuration files, token source, GitHub CLI installation, and `gh auth` status. It never prints token values and does not write to GitHub.
 
 ### 4. Authentication
 
@@ -110,6 +117,17 @@ Do not create a custom secret named `GITHUB_TOKEN`. The standard token is used f
 - sub-issues in the same repository;
 - PR validation comments;
 - inferred labels.
+
+#### Local GitHub CLI authentication
+
+The CLI can fall back to an authenticated GitHub CLI session:
+
+```bash
+gh auth login
+gh auth status
+```
+
+`make doctor` distinguishes a missing CLI, valid authentication, invalid authentication, and environment-token authentication. An invalid `gh` session does not block execution when a valid token is available in `.env`.
 
 #### GitHub Projects v2
 
@@ -163,13 +181,17 @@ Inspect a target repository:
 make discover TARGET=../my-project REPO=owner/my-project
 ```
 
+Non-interactive discovery always recommends a dry-run command, even when `project_setup.json` contains an old `dryRun=false` value.
+
 Preview installed files:
 
 ```bash
 make init-dry TARGET=../my-project PROFILE=core
 ```
 
-Install the core profile:
+The installation dry-run does not create the target directory.
+
+Install the core automation:
 
 ```bash
 make init TARGET=../my-project PROFILE=core
@@ -177,11 +199,13 @@ make init TARGET=../my-project PROFILE=core
 
 The installer includes `Makefile` and `.env.example`. Existing files are preserved. If the target already has either file, review and merge the template manually.
 
-Optional Godot profile:
+Combined install and remote dry-run:
 
 ```bash
-make init TARGET=../my-game PROFILE=godot
+make setup TARGET=../my-project REPO=owner/my-project
 ```
+
+`make setup` installs missing files, then executes the configured API phase in dry-run mode. It does not write remote GitHub changes.
 
 ### 6. Customize
 
@@ -210,11 +234,25 @@ make plan TARGET=../my-project REPO=owner/repository
 
 ### 8. Apply the complete configured setup
 
+`make apply` is also a dry-run unless live execution is explicitly enabled:
+
 ```bash
 make apply TARGET=../my-project REPO=owner/repository
 ```
 
-The configuration in `project_setup.json` decides which modules run. If live Project creation is enabled, `PROJECT_SETUP_PAT` is mandatory.
+Apply changes only after reviewing the plan:
+
+```bash
+make apply TARGET=../my-project REPO=owner/repository LIVE=1
+```
+
+The CLI equivalent is:
+
+```bash
+python -m project_setup apply --repo owner/repository --live
+```
+
+If live Project creation is enabled, `PROJECT_SETUP_PAT` is mandatory.
 
 ### 9. Run individual modules manually
 
@@ -232,11 +270,15 @@ After reviewing the output, add `LIVE=1` explicitly:
 
 ```bash
 make labels TARGET=../my-project REPO=owner/repository LIVE=1
+make milestones TARGET=../my-project REPO=owner/repository LIVE=1
+make issues TARGET=../my-project REPO=owner/repository LIVE=1
 make project-create TARGET=../my-project REPO=owner/repository LIVE=1
 make project-sync TARGET=../my-project REPO=owner/repository PROJECT_NUMBER=1 LIVE=1
 ```
 
 Project v2 live commands require `PROJECT_SETUP_PAT` in the target `.env`.
+
+Without a PAT, `project-sync` dry-run produces an offline preview of the local Project definition and clearly states that remote fields, items, and issues were not queried.
 
 ### 10. Run manually in GitHub Actions
 
@@ -250,34 +292,41 @@ The workflow defaults to dry-run. Labels, milestones, issue generation, and Proj
 
 | Target | Purpose |
 | --- | --- |
-| `make help` | Show setup steps and commands. |
+| `make help` | Show detected platform, setup steps, and commands. |
 | `make check` | Validate committed files, compile, and test. |
-| `make doctor` | Inspect local `.env` and configuration without API writes. |
-| `make discover TARGET=... REPO=...` | Detect the target stack and recommend setup options. |
-| `make init-dry TARGET=...` | Preview installed files. |
+| `make doctor` | Inspect OS, `.env`, tokens, `gh auth`, and configuration without API writes. |
+| `make discover TARGET=... REPO=...` | Detect the target stack and recommend safe setup options. |
+| `make init-dry TARGET=...` | Preview installed files without creating the target directory. |
 | `make init TARGET=...` | Install missing files while preserving existing files. |
+| `make setup TARGET=... REPO=...` | Install missing files and run the configured remote phase in dry-run mode. |
 | `make plan TARGET=... REPO=...` | Preview the complete configured API phase. |
-| `make apply TARGET=... REPO=...` | Apply the complete configured API phase. |
+| `make apply TARGET=... REPO=...` | Preview the configured API phase; dry-run remains the default. |
+| `make apply TARGET=... REPO=... LIVE=1` | Apply the complete configured API phase explicitly. |
 | `make <module> ...` | Preview one module. |
 | `make <module> ... LIVE=1` | Apply one module explicitly. |
 | `make clean` | Remove local Python and build artifacts. |
 
 ## Security model
 
-- Dry-run is the default.
+- Dry-run is the default for all mutating CLI commands.
 - Existing target files are preserved.
+- Installation dry-runs do not create directories.
 - Project v2 never silently falls back to `github.token`.
+- GitHub HTTP requests have a finite timeout.
+- Automatic retries are limited to idempotent read requests; mutations are not replayed after transport failures.
 - Workflows use minimum repository permissions.
-- PR workflows execute trusted base-branch code.
+- Privileged `pull_request_target` workflows check out trusted base-branch automation.
+- Read-only `pull_request` test workflows may test the proposed PR content.
 - Untrusted branch names are passed through environment variables, not interpolated into shell source.
 - Tokens are never printed by diagnostics.
 
 ## Current limitations
 
-- Issue generation is not idempotent yet.
+- Issue generation is not idempotent yet and must not be repeated without reviewing existing issues.
 - Project v2 views remain a manual configuration step.
 - Rulesets and branch protection are not created automatically.
 - The package is embedded in target repositories instead of being installed from PyPI.
+- Milestone synchronization intentionally inspects at most the first 100 existing milestones.
 - A summarized `make preview` with a configurable example limit is planned but not implemented yet.
 
 ---
@@ -293,14 +342,15 @@ O `project_setup` é uma ferramenta autocontida para instalar e operar automaç�
 ## Principais recursos
 
 - Execução manual por Makefile.
-- Dry-run seguro por padrão.
+- Dry-run seguro em todos os comandos mutáveis.
+- Confirmação explícita por `--live` ou `LIVE=1` antes de qualquer escrita.
 - Descoberta guiada pela CLI Python.
 - Workflows, templates, manifests e validadores incorporados.
+- Identificação nativa do Windows pelo Makefile.
 - Carregamento automático de `.env`, sem dependências externas.
 - `github.token` padrão para operações do próprio repositório.
 - `PROJECT_SETUP_PAT` explícita para GitHub Projects v2.
 - Erros com instruções `Fix:`.
-- Perfis `core` e `godot`.
 
 <a id="configuração"></a>
 
@@ -313,6 +363,12 @@ O `project_setup` é uma ferramenta autocontida para instalar e operar automaç�
 - GNU Make para usar o Makefile;
 - permissão para modificar o repositório-alvo;
 - personal access token somente para operações reais de Project v2.
+
+O Makefile detecta `OS=Windows_NT`. No Windows, usa `python`; em Linux, macOS, Git Bash e WSL, usa `python3`. É possível sobrescrever:
+
+```powershell
+make PYTHON=py check
+```
 
 Sem Make:
 
@@ -328,7 +384,7 @@ make check
 
 O comando:
 
-1. valida arquivos obrigatórios e commitados, JSON e metadados do pacote;
+1. valida arquivos obrigatórios e commitados, JSON, referências de scripts e metadados do pacote;
 2. compila os fontes Python;
 3. executa os testes unitários.
 
@@ -362,7 +418,7 @@ Execute:
 make doctor
 ```
 
-O `doctor` verifica `.env`, `project_setup.json` e manifests referenciados, sem exibir tokens e sem alterar o GitHub.
+O `doctor` informa sistema operacional, executável Python, `.env`, configuração, origem do token, instalação da GitHub CLI e situação do `gh auth`. Ele não exibe tokens e não altera o GitHub.
 
 ### 4. Autenticação
 
@@ -382,6 +438,15 @@ Não crie um secret personalizado chamado `GITHUB_TOKEN`. O token padrão atende
 - sub-issues no mesmo repositório;
 - comentários de validação em PRs;
 - labels inferidas.
+
+#### Autenticação local da GitHub CLI
+
+```bash
+gh auth login
+gh auth status
+```
+
+O `make doctor` diferencia CLI ausente, autenticação válida, autenticação inválida e tokens definidos no ambiente. Um `gh auth` inválido não bloqueia o uso quando existe outro token válido no `.env`.
 
 #### GitHub Projects v2
 
@@ -434,13 +499,17 @@ make init-dry TARGET=../meu-projeto PROFILE=core
 make init TARGET=../meu-projeto PROFILE=core
 ```
 
+A descoberta não interativa sempre recomenda dry-run. O dry-run de instalação não cria o diretório-alvo.
+
 O instalador inclui `Makefile` e `.env.example`. Arquivos existentes são preservados e devem ser mesclados manualmente.
 
-Perfil Godot opcional:
+Fluxo combinado de instalação e simulação remota:
 
 ```bash
-make init TARGET=../meu-jogo PROFILE=godot
+make setup TARGET=../meu-projeto REPO=owner/meu-projeto
 ```
+
+Esse comando instala arquivos ausentes e executa o plano remoto em dry-run, sem alterar a API do GitHub.
 
 ### 6. Personalizar
 
@@ -464,8 +533,22 @@ O `make plan` sempre usa dry-run.
 
 ### 8. Aplicar a configuração completa
 
+Sem `LIVE=1`, o comando continua sendo uma simulação:
+
 ```bash
 make apply TARGET=../meu-projeto REPO=owner/repositorio
+```
+
+A escrita exige confirmação explícita:
+
+```bash
+make apply TARGET=../meu-projeto REPO=owner/repositorio LIVE=1
+```
+
+Equivalente pela CLI:
+
+```bash
+python -m project_setup apply --repo owner/repositorio --live
 ```
 
 Se a configuração habilitar criação de Project v2, `PROJECT_SETUP_PAT` será obrigatória.
@@ -486,11 +569,15 @@ Após revisar, adicione `LIVE=1`:
 
 ```bash
 make labels TARGET=../meu-projeto REPO=owner/repositorio LIVE=1
+make milestones TARGET=../meu-projeto REPO=owner/repositorio LIVE=1
+make issues TARGET=../meu-projeto REPO=owner/repositorio LIVE=1
 make project-create TARGET=../meu-projeto REPO=owner/repositorio LIVE=1
 make project-sync TARGET=../meu-projeto REPO=owner/repositorio PROJECT_NUMBER=1 LIVE=1
 ```
 
 Os comandos reais de Project v2 exigem `PROJECT_SETUP_PAT` no `.env` do alvo.
+
+Sem PAT, o dry-run de `project-sync` apresenta apenas a definição local e informa claramente que fields, items e issues remotos não foram consultados.
 
 ### 10. Executar manualmente no Actions
 
@@ -504,32 +591,39 @@ O workflow inicia em dry-run. Labels, milestones, geração de issues e criaçã
 
 | Alvo | Finalidade |
 | --- | --- |
-| `make help` | Mostrar a sequência inicial e os comandos. |
+| `make help` | Mostrar plataforma detectada, sequência inicial e comandos. |
 | `make check` | Validar arquivos commitados, compilar e testar. |
-| `make doctor` | Verificar `.env` e configuração sem escrita na API. |
-| `make discover TARGET=... REPO=...` | Detectar a stack e recomendar opções. |
-| `make init-dry TARGET=...` | Simular arquivos instalados. |
+| `make doctor` | Verificar SO, `.env`, tokens, `gh auth` e configuração sem escrita na API. |
+| `make discover TARGET=... REPO=...` | Detectar a stack e recomendar opções seguras. |
+| `make init-dry TARGET=...` | Simular arquivos instalados sem criar o diretório-alvo. |
 | `make init TARGET=...` | Instalar arquivos ausentes preservando existentes. |
+| `make setup TARGET=... REPO=...` | Instalar arquivos ausentes e executar o plano remoto em dry-run. |
 | `make plan TARGET=... REPO=...` | Simular a fase completa da API. |
-| `make apply TARGET=... REPO=...` | Aplicar a fase completa da API. |
+| `make apply TARGET=... REPO=...` | Simular a fase configurada; dry-run permanece o padrão. |
+| `make apply TARGET=... REPO=... LIVE=1` | Aplicar explicitamente a fase configurada. |
 | `make <módulo> ...` | Simular um módulo. |
 | `make <módulo> ... LIVE=1` | Aplicar explicitamente um módulo. |
 | `make clean` | Remover caches Python e artefatos locais. |
 
 ## Segurança
 
-- Dry-run é o padrão.
+- Dry-run é o padrão em todos os comandos mutáveis.
 - Arquivos existentes são preservados.
+- Dry-run de instalação não cria diretórios.
 - Project v2 não usa fallback silencioso para `github.token`.
+- Chamadas HTTP possuem timeout finito.
+- Retentativas automáticas ficam restritas a leituras idempotentes; mutações não são repetidas após falhas de transporte.
 - Workflows usam permissões mínimas.
-- Workflows de PR executam código confiável da branch-base.
+- Workflows privilegiados com `pull_request_target` usam automação confiável da branch-base.
+- Workflows de teste somente leitura com `pull_request` podem validar o conteúdo proposto no PR.
 - Nomes de branches passam por variáveis de ambiente, sem interpolação direta no shell.
 - Diagnósticos nunca imprimem tokens.
 
 ## Limitações atuais
 
-- A geração de issues ainda não é idempotente.
+- A geração de issues ainda não é idempotente e não deve ser repetida sem revisar as issues existentes.
 - Views de Project v2 continuam manuais.
 - Rulesets e branch protection ainda não são criados.
 - O pacote é incorporado nos repositórios-alvo, sem publicação no PyPI.
+- A sincronização de milestones consulta intencionalmente no máximo os primeiros 100 milestones existentes.
 - Um `make preview` resumido, com limite configurável de exemplos, está planejado, mas ainda não foi implementado.
