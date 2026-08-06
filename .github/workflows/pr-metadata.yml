@@ -1,32 +1,42 @@
 name: PR metadata validation
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, edited]
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
 
 permissions:
   contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: pr-metadata-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
-  validate-pr-body:
-    # Draft PRs are works-in-progress; skip validation until they are marked ready.
+  validate-pr:
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
-      - name: Ensure required PR sections and issue link
+      - name: Checkout trusted base commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate branch name and pull request metadata
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
-        run: |
-          required=("Linked Issue" "Summary" "How to test")
-          for section in "${required[@]}"; do
-            if ! echo "$PR_BODY" | grep -qF "## $section"; then
-              echo "Missing required PR section: ## $section" >&2
-              exit 1
-            fi
-          done
-          # Accept a real issue number (Closes/Fixes/Resolves #NNN) or an explicit N/A
-          # when there is genuinely no linked issue.
-          if ! echo "$PR_BODY" | grep -qE 'Closes #[0-9]+|Fixes #[0-9]+|Resolves #[0-9]+|Closes #[Nn][/\\]?[Aa]|#N/A|#n/a'; then
-            echo "PR body must reference a linked issue (e.g. Closes #123) or mark it as not applicable (Closes #N/A)" >&2
-            exit 1
-          fi
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python scripts/validation/validate_pr_body.py
+          --branch "${{ github.event.pull_request.head.ref }}"
+          --base-branch "${{ github.event.pull_request.base.ref }}"
+          --repo "${{ github.repository }}"
+          --pr-number "${{ github.event.pull_request.number }}"
+          --comment
