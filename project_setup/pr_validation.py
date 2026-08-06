@@ -17,7 +17,8 @@ REQUIRED_SECTIONS = (
     ("known risks", "Known risks"),
     ("dod checklist", "DoD checklist"),
 )
-PLACEHOLDER = re.compile(r"(<[^>]+>|\b(todo|tbd|placeholder|describe|fill in|replace)\b)", re.IGNORECASE)
+ANGLE_PLACEHOLDER = re.compile(r"^<[A-Za-z][^<>]*>$")
+KEYWORD_PLACEHOLDER = re.compile(r"\b(todo|tbd|placeholder|describe|fill in|replace)\b", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -49,7 +50,7 @@ def sections_from_body(body: str) -> dict[str, list[str]]:
 def meaningful(lines: list[str]) -> bool:
     for line in lines:
         stripped = line.strip().lstrip("-* ").strip()
-        if stripped and not PLACEHOLDER.search(stripped):
+        if stripped and not ANGLE_PLACEHOLDER.fullmatch(stripped) and not KEYWORD_PLACEHOLDER.search(stripped):
             return True
     return False
 
