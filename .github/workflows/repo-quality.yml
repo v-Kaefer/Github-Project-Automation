@@ -2,9 +2,10 @@ name: Repository quality
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main, develop]
+  workflow_dispatch:
 
 permissions:
   contents: read
