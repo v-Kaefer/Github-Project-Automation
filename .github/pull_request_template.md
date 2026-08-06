@@ -1,26 +1,26 @@
 ## Linked Issue
-- Closes #<issue-number>  <!-- use N/A if there is no linked issue: Closes #N/A -->
+- Closes #<issue-number>
 
 ## Milestone
-- MS0
+- <milestone>
 
 ## Summary
--
+- <what changed and why>
 
 ## How to test
 - Test type: automated | smoke | manual
-- Steps: describe the commands, manual flow, or verification evidence
+- Steps: <commands or manual verification flow>
 
 ## Evidence
-- [ ] Screenshot/GIF attached (when applicable)
-- [ ] Log/output attached (when applicable)
-- [ ] Manual checklist executed (when applicable)
+- [ ] Screenshot/GIF attached when applicable
+- [ ] Log/output attached when applicable
+- [ ] Manual checklist executed when applicable
 
 ## Known risks
--
+- <known limitations or explicitly state None>
 
 ## DoD checklist
 - [ ] Scope implemented as defined
 - [ ] Tests executed and documented
-- [ ] Evidence attached
+- [ ] Evidence attached when applicable
 - [ ] No known critical breakage introduced
