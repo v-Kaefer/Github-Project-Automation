@@ -1,5 +1,5 @@
 {
-  "version": "0.2.0",
+  "version": "0.2.1",
   "labelsFile": "config/project/labels.json",
   "milestonesFile": "config/project/milestones.json",
   "projectDefinitionFile": "config/project/project-definition.json",
