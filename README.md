@@ -7,23 +7,21 @@
 
 <a id="english"></a>
 
-`project_setup` is a self-contained toolkit for installing and operating GitHub repository automation. It provides a Makefile and Python CLI for repository discovery, configuration validation, labels, milestones, issues, sub-issues, pull-request guardrails, and GitHub Projects v2.
+`project_setup` is a self-contained toolkit for installing and operating GitHub repository automation. It provides a Makefile and Python CLI for labels, milestones, issues, sub-issues, pull-request guardrails, repository discovery, and GitHub Projects v2.
 
 [Go directly to setup](#setup) · [Leia em português](#português)
 
-## What it installs
+## Main capabilities
 
-The `core` profile can install:
-
-- a Makefile for manual operation;
-- `.env.example` for local credentials and defaults;
-- the embedded `project_setup` Python package;
-- GitHub Actions for repository setup, PR validation, auto-labeling, and quality checks;
-- issue forms and a pull-request template;
-- JSON manifests for labels, milestones, backlog items, and Project v2;
-- validation scripts with actionable error messages.
-
-Existing files are preserved unless `FORCE=1` or `--force` is explicitly used.
+- Manual operation through Make targets.
+- Safe dry-run defaults.
+- Guided repository discovery through the Python CLI.
+- Embedded workflows, templates, manifests, and validation scripts.
+- Local `.env` loading without external dependencies.
+- Standard `github.token` for repository-scoped Actions operations.
+- Explicit `PROJECT_SETUP_PAT` requirement for GitHub Projects v2.
+- Actionable diagnostics with a `Fix:` instruction for validation errors.
+- Core and optional Godot profiles.
 
 <a id="setup"></a>
 
@@ -34,39 +32,37 @@ Existing files are preserved unless `FORCE=1` or `--force` is explicitly used.
 - Python 3.11 or newer;
 - Git;
 - GNU Make for the Makefile interface;
-- a GitHub account with permission to modify the target repository;
-- a personal access token only when creating or synchronizing GitHub Projects v2.
+- permission to modify the target GitHub repository;
+- a personal access token only for live GitHub Projects v2 operations.
 
-The Python CLI remains available on systems without Make:
+The Python CLI can be used without Make:
 
 ```bash
 python -m project_setup --help
 ```
 
-### 2. Clone and validate the tool
+### 2. Validate the tool
 
 ```bash
-git clone https://github.com/v-Kaefer/Github-Project-Automation.git
-cd Github-Project-Automation
-git switch develop
 make check
 ```
 
-`make check` performs three local stages:
+The command runs three local stages:
 
-1. validates required files, committed artifacts, JSON, and package metadata;
-2. compiles the Python sources;
-3. runs unit tests.
+1. validate required and committed files, JSON, and package metadata;
+2. compile Python sources;
+3. run unit tests.
 
-It does not call the GitHub API and does not modify a repository. Local `__pycache__` files created during compilation are removed automatically. The quality check only rejects generated Python artifacts that are actually committed to Git. Every reported problem includes a `Fix:` instruction.
+It does not call the GitHub API. Local `__pycache__` files are removed automatically and are not reported as committed files. A generated artifact only fails the check when `git ls-files` confirms it is tracked.
 
-### 3. Create the local `.env`
+Typical corrective output:
 
-Copy the template:
-
-```bash
-cp .env.example .env
+```text
+ERROR: Generated Python artifact is committed: project_setup/__pycache__/module.pyc
+  Fix: Run `git rm --cached -- project_setup/__pycache__/module.pyc` and then `make clean`.
 ```
+
+### 3. Create the local environment
 
 PowerShell:
 
@@ -74,33 +70,39 @@ PowerShell:
 Copy-Item .env.example .env
 ```
 
-At minimum, set the target repository:
+Linux, macOS, Git Bash, or WSL:
+
+```bash
+cp .env.example .env
+```
+
+Set the repository:
 
 ```dotenv
 GITHUB_REPOSITORY=owner/repository
 ```
 
-The CLI loads `.env` automatically from the current working directory. Existing process environment variables take precedence over values in `.env`.
+The CLI loads `.env` automatically from the current working directory. Existing process environment variables take precedence.
 
-Run the read-only local diagnostic:
+Run the read-only diagnostic:
 
 ```bash
 make doctor
 ```
 
-`make doctor` checks the `.env`, `project_setup.json`, and referenced manifest files. It explains missing values and does not make GitHub API changes.
+`make doctor` validates `.env`, `project_setup.json`, and the referenced manifest files. It never prints token values and does not write to GitHub.
 
-### 4. Authentication model
+### 4. Authentication
 
-#### Repository-scoped operations
+#### Repository-scoped GitHub Actions operations
 
-GitHub Actions automatically provides `github.token`. The workflows expose it to the Python process as:
+GitHub automatically creates `github.token` for each job. The workflows expose it to Python as:
 
 ```yaml
 GITHUB_TOKEN: ${{ github.token }}
 ```
 
-No custom secret named `GITHUB_TOKEN` is required. The standard repository token is used for operations such as:
+Do not create a custom secret named `GITHUB_TOKEN`. The standard token is used for operations inside the repository, subject to the workflow `permissions` block:
 
 - labels;
 - milestones;
@@ -111,7 +113,7 @@ No custom secret named `GITHUB_TOKEN` is required. The standard repository token
 
 #### GitHub Projects v2
 
-GitHub's repository-scoped token cannot access Projects v2. Live Project v2 creation or synchronization requires `PROJECT_SETUP_PAT`.
+The repository-scoped token cannot access Projects v2. Live Project creation and synchronization require `PROJECT_SETUP_PAT`.
 
 For the current GraphQL implementation, create a **personal access token (classic)**:
 
@@ -120,60 +122,60 @@ For the current GraphQL implementation, create a **personal access token (classi
 3. Open **Developer settings**.
 4. Open **Personal access tokens**.
 5. Open **Tokens (classic)**.
-6. Click **Generate new token** and then **Generate new token (classic)**.
-7. Set a descriptive name and an expiration date.
-8. Select these scopes:
+6. Select **Generate new token** → **Generate new token (classic)**.
+7. Define a descriptive name and expiration.
+8. Select the scopes:
    - `repo`;
    - `project`.
 9. Generate the token and copy it immediately.
 
-Official references:
+Official GitHub documentation:
 
 - [Managing personal access tokens](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)
 - [Automating Projects using Actions](https://docs.github.com/en/issues/planning-and-tracking-with-projects/automating-your-project/automating-projects-using-actions)
 
-For local execution, save it only in `.env`:
+For local use, save the PAT in `.env`:
 
 ```dotenv
 PROJECT_SETUP_PAT=ghp_your_token_here
 ```
 
-Never commit `.env`. The repository ignores `.env` and permits only `.env.example` to be versioned.
+Never commit `.env`.
 
-For GitHub Actions, create a repository secret:
+For the manual Actions workflow, save the PAT as a repository secret:
 
 1. Open the target repository.
 2. Open **Settings**.
 3. Open **Secrets and variables** → **Actions**.
 4. Select **New repository secret**.
-5. Use the name `PROJECT_SETUP_PAT`.
-6. Paste the token and save it.
+5. Name it `PROJECT_SETUP_PAT`.
+6. Paste and save the token.
 
-When a live workflow requests Project v2 without this secret, it stops before applying changes and prints the exact setup path and required scopes.
+A live workflow that requests Project v2 without the secret stops before applying changes and prints the required configuration path and scopes.
 
-> GitHub recommends a GitHub App for long-lived organization automation. The PAT path is retained here as the simplest supported setup for individual users and initial adoption.
+> GitHub recommends a GitHub App for long-lived organization automation. The PAT workflow remains the simplest initial setup for individual users.
 
-### 5. Inspect a target repository
+### 5. Discover and install
+
+Inspect a target repository:
 
 ```bash
 make discover TARGET=../my-project REPO=owner/my-project
 ```
 
-The command detects common Python, Node.js, Go, Java, Rust, and .NET markers and prints the recommended setup command.
-
-### 6. Preview installation
+Preview installed files:
 
 ```bash
 make init-dry TARGET=../my-project PROFILE=core
 ```
 
-Install the files after reviewing the preview:
+Install the core profile:
 
 ```bash
 make init TARGET=../my-project PROFILE=core
 ```
 
-The installer includes `Makefile` and `.env.example`. If the target already has either file, it is preserved and the installer asks you to review and merge the templates manually.
+The installer includes `Makefile` and `.env.example`. Existing files are preserved. If the target already has either file, review and merge the template manually.
 
 Optional Godot profile:
 
@@ -181,11 +183,11 @@ Optional Godot profile:
 make init TARGET=../my-game PROFILE=godot
 ```
 
-### 7. Customize the target configuration
+### 6. Customize
 
 Review at least:
 
-- `.env.example` and the local `.env`;
+- `.env.example` and the untracked `.env`;
 - `project_setup.json`;
 - `config/project/labels.json`;
 - `config/project/milestones.json`;
@@ -195,84 +197,88 @@ Review at least:
 - `.github/workflows/main-source-branch.yml`;
 - `.github/pull_request_template.md`.
 
-Project creation and issue generation are disabled by default.
+Issue generation and Project creation are disabled by default.
 
-### 8. Diagnose and plan
-
-From the target repository:
+### 7. Diagnose and plan
 
 ```bash
 make doctor
-make plan REPO=owner/repository
-```
-
-Or from this tool repository:
-
-```bash
-make doctor CONFIG=project_setup.json
 make plan TARGET=../my-project REPO=owner/repository
 ```
 
-`make plan` uses dry-run mode. Review the complete output before applying changes.
+`make plan` is always a dry-run. Review the complete output before a live operation.
 
-### 9. Apply
-
-Repository resources without Project v2 can use a standard authenticated GitHub CLI session or another supported token:
+### 8. Apply the complete configured setup
 
 ```bash
 make apply TARGET=../my-project REPO=owner/repository
 ```
 
-Project v2 operations require `PROJECT_SETUP_PAT` in the target `.env`:
+The configuration in `project_setup.json` decides which modules run. If live Project creation is enabled, `PROJECT_SETUP_PAT` is mandatory.
+
+### 9. Run individual modules manually
+
+Individual Make targets are dry-run by default:
 
 ```bash
+make labels TARGET=../my-project REPO=owner/repository
+make milestones TARGET=../my-project REPO=owner/repository
+make issues TARGET=../my-project REPO=owner/repository
 make project-create TARGET=../my-project REPO=owner/repository
 make project-sync TARGET=../my-project REPO=owner/repository PROJECT_NUMBER=1
 ```
 
-### 10. Manual GitHub Actions execution
+After reviewing the output, add `LIVE=1` explicitly:
 
-After installation, open the target repository and select:
+```bash
+make labels TARGET=../my-project REPO=owner/repository LIVE=1
+make project-create TARGET=../my-project REPO=owner/repository LIVE=1
+make project-sync TARGET=../my-project REPO=owner/repository PROJECT_NUMBER=1 LIVE=1
+```
+
+Project v2 live commands require `PROJECT_SETUP_PAT` in the target `.env`.
+
+### 10. Run manually in GitHub Actions
+
+In the target repository:
 
 **Actions** → **Project setup** → **Run workflow**
 
-The workflow defaults to dry-run. Labels, milestones, issue generation, and Project v2 creation are separate inputs. Live Project v2 creation requires the `PROJECT_SETUP_PAT` Actions secret described above.
+The workflow defaults to dry-run. Labels, milestones, issue generation, and Project creation are separate inputs. A live Project v2 run requires the `PROJECT_SETUP_PAT` Actions secret.
 
 ## Makefile reference
 
 | Target | Purpose |
 | --- | --- |
-| `make help` | Show the local setup sequence and available commands. |
-| `make check` | Validate committed files, compile sources, and run tests. |
-| `make doctor` | Inspect `.env` and local configuration without API writes. |
+| `make help` | Show setup steps and commands. |
+| `make check` | Validate committed files, compile, and test. |
+| `make doctor` | Inspect local `.env` and configuration without API writes. |
 | `make discover TARGET=... REPO=...` | Detect the target stack and recommend setup options. |
-| `make init-dry TARGET=...` | Preview files that would be installed. |
+| `make init-dry TARGET=...` | Preview installed files. |
 | `make init TARGET=...` | Install missing files while preserving existing files. |
-| `make plan TARGET=... REPO=...` | Preview configured GitHub changes. |
-| `make apply TARGET=... REPO=...` | Apply configured GitHub changes. |
-| `make setup TARGET=... REPO=...` | Install files and run a dry-run. |
-| `make setup-live TARGET=... REPO=...` | Install files and perform a live apply. |
+| `make plan TARGET=... REPO=...` | Preview the complete configured API phase. |
+| `make apply TARGET=... REPO=...` | Apply the complete configured API phase. |
+| `make <module> ...` | Preview one module. |
+| `make <module> ... LIVE=1` | Apply one module explicitly. |
 | `make clean` | Remove local Python and build artifacts. |
 
-## Safety model
+## Security model
 
 - Dry-run is the default.
-- Issue generation is disabled by default.
-- Project creation is disabled by default.
 - Existing target files are preserved.
-- Project v2 uses an explicit PAT instead of silently falling back to `github.token`.
-- PR workflows execute trusted code from the base commit.
-- Untrusted branch names are passed through environment variables rather than interpolated into shell scripts.
-- Workflow permissions are limited to the resources each workflow uses.
-- Tokens are never printed by `doctor` or workflow diagnostics.
+- Project v2 never silently falls back to `github.token`.
+- Workflows use minimum repository permissions.
+- PR workflows execute trusted base-branch code.
+- Untrusted branch names are passed through environment variables, not interpolated into shell source.
+- Tokens are never printed by diagnostics.
 
 ## Current limitations
 
-- Issue generation is not yet idempotent; inspect existing issues before repeating it.
-- Project v2 views listed in the definition still require manual configuration.
-- GitHub rulesets and branch protection are not created automatically yet.
-- The installer embeds the package in each target repository rather than using a published PyPI release.
-- A summarized `make preview` with limited example output is planned but is not implemented yet.
+- Issue generation is not idempotent yet.
+- Project v2 views remain a manual configuration step.
+- Rulesets and branch protection are not created automatically.
+- The package is embedded in target repositories instead of being installed from PyPI.
+- A summarized `make preview` with a configurable example limit is planned but not implemented yet.
 
 ---
 
@@ -280,23 +286,21 @@ The workflow defaults to dry-run. Labels, milestones, issue generation, and Proj
 
 # Configuração de Projetos no GitHub
 
-O `project_setup` é uma ferramenta autocontida para instalar e operar automações de repositórios no GitHub. Ela oferece Makefile e CLI Python para descoberta do projeto, validação de configuração, labels, milestones, issues, sub-issues, regras de pull request e GitHub Projects v2.
+O `project_setup` é uma ferramenta autocontida para instalar e operar automações de repositórios no GitHub. Ela oferece Makefile e CLI Python para labels, milestones, issues, sub-issues, validações de pull request, descoberta do repositório e GitHub Projects v2.
 
 [Ir diretamente para a configuração](#configuração) · [Read in English](#english)
 
-## O que é instalado
+## Principais recursos
 
-O perfil `core` pode instalar:
-
-- Makefile para execução manual;
-- `.env.example` para credenciais e configurações locais;
-- pacote Python `project_setup` incorporado;
-- GitHub Actions para setup, validação de PR, auto-label e qualidade;
-- formulários de issues e template de pull request;
-- manifests JSON para labels, milestones, backlog e Project v2;
-- scripts de validação com mensagens de correção acionáveis.
-
-Arquivos existentes são preservados, exceto quando `FORCE=1` ou `--force` é usado explicitamente.
+- Execução manual por Makefile.
+- Dry-run seguro por padrão.
+- Descoberta guiada pela CLI Python.
+- Workflows, templates, manifests e validadores incorporados.
+- Carregamento automático de `.env`, sem dependências externas.
+- `github.token` padrão para operações do próprio repositório.
+- `PROJECT_SETUP_PAT` explícita para GitHub Projects v2.
+- Erros com instruções `Fix:`.
+- Perfis `core` e `godot`.
 
 <a id="configuração"></a>
 
@@ -306,34 +310,31 @@ Arquivos existentes são preservados, exceto quando `FORCE=1` ou `--force` é us
 
 - Python 3.11 ou superior;
 - Git;
-- GNU Make para usar a interface Makefile;
-- conta GitHub com permissão para modificar o repositório-alvo;
-- personal access token somente para criar ou sincronizar GitHub Projects v2.
+- GNU Make para usar o Makefile;
+- permissão para modificar o repositório-alvo;
+- personal access token somente para operações reais de Project v2.
 
-Em sistemas sem Make, use diretamente:
+Sem Make:
 
 ```bash
 python -m project_setup --help
 ```
 
-### 2. Clonar e validar a ferramenta
+### 2. Validar a ferramenta
 
 ```bash
-git clone https://github.com/v-Kaefer/Github-Project-Automation.git
-cd Github-Project-Automation
-git switch develop
 make check
 ```
 
-O `make check` executa três etapas locais:
+O comando:
 
-1. valida arquivos obrigatórios, artefatos commitados, JSON e metadados do pacote;
+1. valida arquivos obrigatórios e commitados, JSON e metadados do pacote;
 2. compila os fontes Python;
 3. executa os testes unitários.
 
-Ele não chama a API do GitHub e não modifica repositórios. Os `__pycache__` locais criados durante a compilação são removidos automaticamente. O validador rejeita apenas artefatos Python realmente commitados. Cada erro apresenta uma instrução `Fix:`.
+Ele não chama a API do GitHub. Os `__pycache__` locais são removidos automaticamente e não são confundidos com arquivos versionados. Um artefato gerado somente causa falha quando `git ls-files` confirma que ele está commitado.
 
-### 3. Criar o `.env` local
+### 3. Criar o ambiente local
 
 PowerShell:
 
@@ -347,33 +348,33 @@ Linux, macOS, Git Bash ou WSL:
 cp .env.example .env
 ```
 
-Defina ao menos o repositório-alvo:
+Defina o repositório:
 
 ```dotenv
-GITHUB_REPOSITORY=owner/repository
+GITHUB_REPOSITORY=owner/repositorio
 ```
 
-A CLI carrega automaticamente o `.env` do diretório atual. Variáveis já definidas no processo têm prioridade sobre o arquivo.
+A CLI carrega automaticamente o `.env` do diretório atual. Variáveis já presentes no processo têm prioridade.
 
-Execute o diagnóstico local somente leitura:
+Execute:
 
 ```bash
 make doctor
 ```
 
-O `make doctor` verifica `.env`, `project_setup.json` e os manifests referenciados. Ele informa exatamente o que está ausente e não altera o GitHub.
+O `doctor` verifica `.env`, `project_setup.json` e manifests referenciados, sem exibir tokens e sem alterar o GitHub.
 
-### 4. Modelo de autenticação
+### 4. Autenticação
 
-#### Operações do próprio repositório
+#### Operações do repositório no Actions
 
-O GitHub Actions fornece automaticamente `github.token`. Os workflows o disponibilizam ao Python como:
+O GitHub fornece automaticamente `github.token`. Os workflows o passam ao Python assim:
 
 ```yaml
 GITHUB_TOKEN: ${{ github.token }}
 ```
 
-Não é necessário criar um secret chamado `GITHUB_TOKEN`. O token padrão atende operações como:
+Não crie um secret personalizado chamado `GITHUB_TOKEN`. O token padrão atende, conforme o bloco `permissions`:
 
 - labels;
 - milestones;
@@ -384,64 +385,56 @@ Não é necessário criar um secret chamado `GITHUB_TOKEN`. O token padrão aten
 
 #### GitHub Projects v2
 
-O token padrão do repositório não acessa Projects v2. A criação ou sincronização real exige `PROJECT_SETUP_PAT`.
+O token padrão do repositório não acessa Projects v2. Criação e sincronização reais exigem `PROJECT_SETUP_PAT`.
 
-Para a implementação GraphQL atual, crie um **personal access token (classic)**:
+Para a implementação GraphQL atual, crie um **personal access token classic**:
 
-1. Clique na sua foto de perfil no GitHub.
-2. Abra **Settings**.
-3. Abra **Developer settings**.
-4. Abra **Personal access tokens**.
-5. Abra **Tokens (classic)**.
-6. Clique em **Generate new token** e depois **Generate new token (classic)**.
-7. Defina nome descritivo e validade.
-8. Marque os escopos:
-   - `repo`;
-   - `project`.
-9. Gere o token e copie imediatamente.
+1. clique na foto de perfil;
+2. abra **Settings**;
+3. abra **Developer settings**;
+4. abra **Personal access tokens**;
+5. abra **Tokens (classic)**;
+6. selecione **Generate new token** → **Generate new token (classic)**;
+7. defina nome e validade;
+8. marque os escopos `repo` e `project`;
+9. gere e copie o token imediatamente.
 
 Documentação oficial:
 
 - [Gerenciar personal access tokens](https://docs.github.com/pt/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)
 - [Automatizar Projects usando Actions](https://docs.github.com/pt/issues/planning-and-tracking-with-projects/automating-your-project/automating-projects-using-actions)
 
-Para uso local, salve somente no `.env`:
+Para execução local, salve no `.env`:
 
 ```dotenv
 PROJECT_SETUP_PAT=ghp_seu_token_aqui
 ```
 
-Nunca versione o `.env`. O repositório ignora `.env` e permite apenas `.env.example`.
+Nunca versione o `.env`.
 
-Para GitHub Actions, crie um secret no repositório:
+Para Actions, crie o secret:
 
-1. Abra o repositório-alvo.
-2. Abra **Settings**.
-3. Abra **Secrets and variables** → **Actions**.
-4. Selecione **New repository secret**.
-5. Use o nome `PROJECT_SETUP_PAT`.
-6. Cole o token e salve.
+**Repositório** → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**
 
-Quando uma execução real solicitar Project v2 sem esse secret, o workflow para antes de aplicar alterações e mostra o caminho e os escopos necessários.
+Nome:
 
-> Para automações permanentes em organizações, o GitHub recomenda uma GitHub App. A PAT permanece como o caminho mais simples para usuários individuais e validação inicial.
+```text
+PROJECT_SETUP_PAT
+```
 
-### 5. Inspecionar o repositório-alvo
+Uma execução real de Project v2 sem esse secret para antes de aplicar alterações e mostra o caminho e os escopos necessários.
+
+> Para automações permanentes em organizações, o GitHub recomenda uma GitHub App. A PAT é mantida como o caminho inicial mais simples.
+
+### 5. Descobrir e instalar
 
 ```bash
 make discover TARGET=../meu-projeto REPO=owner/meu-projeto
-```
-
-O comando detecta marcadores comuns de Python, Node.js, Go, Java, Rust e .NET e imprime o comando recomendado.
-
-### 6. Simular e instalar
-
-```bash
 make init-dry TARGET=../meu-projeto PROFILE=core
 make init TARGET=../meu-projeto PROFILE=core
 ```
 
-O instalador inclui `Makefile` e `.env.example`. Caso o alvo já possua algum deles, o arquivo existente é preservado e a saída orienta uma mesclagem manual.
+O instalador inclui `Makefile` e `.env.example`. Arquivos existentes são preservados e devem ser mesclados manualmente.
 
 Perfil Godot opcional:
 
@@ -449,53 +442,63 @@ Perfil Godot opcional:
 make init TARGET=../meu-jogo PROFILE=godot
 ```
 
-### 7. Personalizar
+### 6. Personalizar
 
-Revise pelo menos:
+Revise:
 
-- `.env.example` e o `.env` local;
+- `.env.example` e o `.env` não versionado;
 - `project_setup.json`;
-- `config/project/labels.json`;
-- `config/project/milestones.json`;
-- `config/project/project-definition.json`;
-- `config/stories/backlog-manifest.json`;
-- `.github/workflows/project-setup.yml`;
-- `.github/workflows/main-source-branch.yml`;
-- `.github/pull_request_template.md`.
+- manifests em `config/project` e `config/stories`;
+- workflows e templates em `.github/`.
 
-A criação de Project e a geração de issues permanecem desativadas por padrão.
+Geração de issues e criação de Project ficam desativadas por padrão.
 
-### 8. Diagnosticar e planejar
+### 7. Diagnosticar e planejar
 
 ```bash
 make doctor
 make plan TARGET=../meu-projeto REPO=owner/repositorio
 ```
 
-O `make plan` usa dry-run. Revise toda a saída antes de aplicar.
+O `make plan` sempre usa dry-run.
 
-### 9. Aplicar
-
-Para recursos do repositório sem Project v2:
+### 8. Aplicar a configuração completa
 
 ```bash
 make apply TARGET=../meu-projeto REPO=owner/repositorio
 ```
 
-Para Project v2, configure `PROJECT_SETUP_PAT` no `.env` do alvo:
+Se a configuração habilitar criação de Project v2, `PROJECT_SETUP_PAT` será obrigatória.
+
+### 9. Executar módulos individualmente
+
+Dry-run padrão:
 
 ```bash
+make labels TARGET=../meu-projeto REPO=owner/repositorio
+make milestones TARGET=../meu-projeto REPO=owner/repositorio
+make issues TARGET=../meu-projeto REPO=owner/repositorio
 make project-create TARGET=../meu-projeto REPO=owner/repositorio
 make project-sync TARGET=../meu-projeto REPO=owner/repositorio PROJECT_NUMBER=1
 ```
 
-### 10. Execução manual no GitHub Actions
+Após revisar, adicione `LIVE=1`:
 
-No repositório-alvo, abra:
+```bash
+make labels TARGET=../meu-projeto REPO=owner/repositorio LIVE=1
+make project-create TARGET=../meu-projeto REPO=owner/repositorio LIVE=1
+make project-sync TARGET=../meu-projeto REPO=owner/repositorio PROJECT_NUMBER=1 LIVE=1
+```
+
+Os comandos reais de Project v2 exigem `PROJECT_SETUP_PAT` no `.env` do alvo.
+
+### 10. Executar manualmente no Actions
+
+No repositório-alvo:
 
 **Actions** → **Project setup** → **Run workflow**
 
-O workflow inicia em dry-run. Labels, milestones, geração de issues e criação de Project v2 são opções separadas. A criação real do Project v2 exige o secret `PROJECT_SETUP_PAT`.
+O workflow inicia em dry-run. Labels, milestones, geração de issues e criação de Project são entradas separadas. Project v2 real exige o secret `PROJECT_SETUP_PAT`.
 
 ## Referência do Makefile
 
@@ -503,31 +506,30 @@ O workflow inicia em dry-run. Labels, milestones, geração de issues e criaçã
 | --- | --- |
 | `make help` | Mostrar a sequência inicial e os comandos. |
 | `make check` | Validar arquivos commitados, compilar e testar. |
-| `make doctor` | Verificar `.env` e configuração local sem alterar a API. |
+| `make doctor` | Verificar `.env` e configuração sem escrita na API. |
 | `make discover TARGET=... REPO=...` | Detectar a stack e recomendar opções. |
-| `make init-dry TARGET=...` | Simular os arquivos que seriam instalados. |
-| `make init TARGET=...` | Instalar arquivos ausentes preservando os existentes. |
-| `make plan TARGET=... REPO=...` | Simular alterações configuradas no GitHub. |
-| `make apply TARGET=... REPO=...` | Aplicar alterações configuradas. |
-| `make setup TARGET=... REPO=...` | Instalar e executar dry-run. |
-| `make setup-live TARGET=... REPO=...` | Instalar e executar alterações reais. |
+| `make init-dry TARGET=...` | Simular arquivos instalados. |
+| `make init TARGET=...` | Instalar arquivos ausentes preservando existentes. |
+| `make plan TARGET=... REPO=...` | Simular a fase completa da API. |
+| `make apply TARGET=... REPO=...` | Aplicar a fase completa da API. |
+| `make <módulo> ...` | Simular um módulo. |
+| `make <módulo> ... LIVE=1` | Aplicar explicitamente um módulo. |
 | `make clean` | Remover caches Python e artefatos locais. |
 
-## Modelo de segurança
+## Segurança
 
 - Dry-run é o padrão.
-- Geração de issues e criação de Project ficam desativadas inicialmente.
 - Arquivos existentes são preservados.
-- Project v2 exige PAT explícita e não usa fallback silencioso para `github.token`.
+- Project v2 não usa fallback silencioso para `github.token`.
+- Workflows usam permissões mínimas.
 - Workflows de PR executam código confiável da branch-base.
-- Nomes de branches não são interpolados diretamente em scripts shell.
-- Permissões dos workflows são limitadas às funções utilizadas.
-- Tokens nunca são exibidos pelo `doctor` ou pelos logs de diagnóstico.
+- Nomes de branches passam por variáveis de ambiente, sem interpolação direta no shell.
+- Diagnósticos nunca imprimem tokens.
 
 ## Limitações atuais
 
 - A geração de issues ainda não é idempotente.
-- Views de Project v2 continuam com configuração manual.
-- Rulesets e branch protection ainda não são criados automaticamente.
-- O instalador incorpora o pacote no repositório-alvo em vez de usar uma versão publicada no PyPI.
-- Um `make preview` resumido, com limite de exemplos, está planejado, mas ainda não foi implementado.
+- Views de Project v2 continuam manuais.
+- Rulesets e branch protection ainda não são criados.
+- O pacote é incorporado nos repositórios-alvo, sem publicação no PyPI.
+- Um `make preview` resumido, com limite configurável de exemplos, está planejado, mas ainda não foi implementado.
