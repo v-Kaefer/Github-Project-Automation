@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "github-project-setup"
-version = "0.2.0"
+version = "0.2.1"
 description = "Reusable CLI for setting up GitHub repository workflows, labels, milestones, issues and Projects."
 readme = "README.md"
 requires-python = ">=3.11"
