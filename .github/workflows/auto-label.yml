@@ -32,4 +32,4 @@ jobs:
       - name: Apply inferred labels
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python -m project_setup auto-label apply
+        run: python -m project_setup auto-label apply --live
