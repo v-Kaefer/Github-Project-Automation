@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
+import re
 import shutil
 import subprocess
 import time
 from typing import Any
 import urllib.error
-import urllib.parse
 import urllib.request
 
 
@@ -15,6 +16,7 @@ API_BASE = "https://api.github.com"
 GRAPHQL_URL = f"{API_BASE}/graphql"
 API_VERSION = "2022-11-28"
 RETRYABLE_HTTP_STATUS = {429, 502, 503, 504}
+ENV_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 class GitHubRequestError(RuntimeError):
@@ -26,9 +28,42 @@ class GitHubRequestError(RuntimeError):
         self.details = details
 
 
+def load_env_file(path: str | os.PathLike[str] | None = None) -> Path | None:
+    """Load a simple dotenv file without overriding existing environment variables."""
+    configured_path = path or os.getenv("PROJECT_SETUP_ENV_FILE", ".env")
+    candidate = Path(configured_path).expanduser()
+    if not candidate.is_absolute():
+        candidate = Path.cwd() / candidate
+    if not candidate.is_file():
+        return None
+
+    for line_number, raw_line in enumerate(candidate.read_text(encoding="utf-8").splitlines(), start=1):
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        if "=" not in line:
+            raise ValueError(
+                f"Invalid environment entry in {candidate} at line {line_number}: expected NAME=value"
+            )
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not ENV_KEY.fullmatch(key):
+            raise ValueError(
+                f"Invalid environment variable name '{key}' in {candidate} at line {line_number}"
+            )
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        os.environ.setdefault(key, value)
+    return candidate.resolve()
+
+
 def get_token() -> str | None:
+    load_env_file()
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or os.environ.get("PROJECT_SETUP_PAT")
-    if token:
+    if token and token.strip():
         return token.strip()
     gh = shutil.which("gh")
     if not gh:
@@ -40,6 +75,12 @@ def get_token() -> str | None:
     if result.returncode != 0:
         return None
     return result.stdout.strip() or None
+
+
+def get_project_pat() -> str | None:
+    load_env_file()
+    token = os.environ.get("PROJECT_SETUP_PAT")
+    return token.strip() if token and token.strip() else None
 
 
 def split_repo(repo: str) -> tuple[str, str]:
@@ -140,5 +181,24 @@ class GitHubClient:
 def require_client() -> GitHubClient:
     token = get_token()
     if not token:
-        raise SystemExit("Missing GITHUB_TOKEN, GH_TOKEN, PROJECT_SETUP_PAT, or authenticated gh CLI")
+        raise SystemExit(
+            "No GitHub token is available. Copy .env.example to .env and set PROJECT_SETUP_PAT, "
+            "set GITHUB_TOKEN/GH_TOKEN, or authenticate the GitHub CLI with `gh auth login`."
+        )
+    return GitHubClient(token)
+
+
+def require_project_client() -> GitHubClient:
+    token = get_project_pat()
+    if not token:
+        raise SystemExit(
+            "GitHub Projects v2 requires PROJECT_SETUP_PAT.\n"
+            "Fix:\n"
+            "  1. GitHub profile picture > Settings > Developer settings.\n"
+            "  2. Personal access tokens > Tokens (classic) > Generate new token (classic).\n"
+            "  3. Select the `repo` and `project` scopes.\n"
+            "  4. Copy .env.example to .env and set PROJECT_SETUP_PAT=<token>.\n"
+            "  5. Run `make doctor` before retrying.\n"
+            "The repository-scoped github.token cannot create or synchronize Projects v2."
+        )
     return GitHubClient(token)
