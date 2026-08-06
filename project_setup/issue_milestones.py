@@ -35,6 +35,13 @@ def sync_issue_milestones(
         for issue in issues
         if (title := milestone_from_body(issue.get("body") or ""))
     }
+    missing = sorted({title for title in explicit.values() if title not in milestones_by_title})
+    if missing:
+        raise ValueError(
+            f"Milestones referenced by issue bodies do not exist: {', '.join(missing)}. "
+            "Create the milestones or correct the issue bodies before retrying."
+        )
+
     updated = cleared = unchanged = 0
     unmapped: list[tuple[int, str]] = []
 
@@ -59,9 +66,7 @@ def sync_issue_milestones(
         if not target:
             unmapped.append((number, issue["title"]))
             continue
-        milestone = milestones_by_title.get(target)
-        if not milestone:
-            raise RuntimeError(f"Milestone '{target}' referenced by issue #{number} does not exist")
+        milestone = milestones_by_title[target]
         if current_title == target:
             unchanged += 1
             continue
