@@ -1,54 +1,108 @@
-# Reference copy of .github/workflows/project-setup.yml.
-# The installer copies the active workflow directly; keep this file only for documentation.
 name: Project setup
 
 on:
   workflow_dispatch:
     inputs:
+      run_labels_sync:
+        description: "Synchronize labels"
+        required: true
+        default: true
+        type: boolean
+      run_milestones_sync:
+        description: "Synchronize milestones"
+        required: true
+        default: true
+        type: boolean
+      run_issue_generation:
+        description: "Generate backlog issues and tasks"
+        required: true
+        default: false
+        type: boolean
+      run_project_creation:
+        description: "Create a GitHub Project v2 (requires PROJECT_SETUP_PAT for live runs)"
+        required: true
+        default: false
+        type: boolean
       dry_run:
         description: "Plan changes without writing to GitHub"
         required: true
         default: true
-        type: boolean
-      run_project_creation:
-        description: "Create Project v2 (requires PROJECT_SETUP_PAT for live runs)"
-        required: true
-        default: false
         type: boolean
 
 permissions:
   contents: read
   issues: write
 
+concurrency:
+  group: project-setup-${{ github.repository }}
+  cancel-in-progress: false
+
 jobs:
   setup:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout repository
+        uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+
+      - name: Validate embedded setup package and configuration
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PROJECT_SETUP_PAT: ${{ secrets.PROJECT_SETUP_PAT }}
+        run: |
+          set -euo pipefail
+          python -m compileall -q project_setup
+          python -m project_setup doctor --config project_setup.json
+
       - name: Require PAT for live Project v2 creation
         if: ${{ inputs.run_project_creation && !inputs.dry_run }}
         env:
           PROJECT_SETUP_PAT: ${{ secrets.PROJECT_SETUP_PAT }}
         run: |
+          set -euo pipefail
           if [ -z "${PROJECT_SETUP_PAT:-}" ]; then
-            echo "::error title=PROJECT_SETUP_PAT is required::Create a classic PAT with repo and project scopes and save it as the PROJECT_SETUP_PAT Actions secret."
+            echo "::error title=PROJECT_SETUP_PAT is required::GitHub's repository-scoped token cannot create or synchronize Projects v2."
+            echo "Create a personal access token (classic):"
+            echo "  GitHub profile picture > Settings > Developer settings"
+            echo "  Personal access tokens > Tokens (classic) > Generate new token (classic)"
+            echo "  Select scopes: repo and project"
+            echo "Save it as the repository Actions secret PROJECT_SETUP_PAT, then run this workflow again."
             exit 1
           fi
-      - name: Run project setup
+          echo "PROJECT_SETUP_PAT is configured for the requested Project v2 operation."
+
+      - name: Apply project setup
         env:
           GITHUB_TOKEN: ${{ github.token }}
           PROJECT_SETUP_PAT: ${{ secrets.PROJECT_SETUP_PAT }}
         run: |
-          args=""
+          set -euo pipefail
+          args="--config project_setup.json"
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             args="$args --dry-run"
           else
-            args="$args --no-dry-run"
+            args="$args --live"
+          fi
+          if [ "${{ inputs.run_labels_sync }}" = "true" ]; then
+            args="$args --run-labels"
+          else
+            args="$args --skip-labels"
+          fi
+          if [ "${{ inputs.run_milestones_sync }}" = "true" ]; then
+            args="$args --run-milestones"
+          else
+            args="$args --skip-milestones"
+          fi
+          if [ "${{ inputs.run_issue_generation }}" = "true" ]; then
+            args="$args --run-issue-generation"
+          else
+            args="$args --skip-issue-generation"
           fi
           if [ "${{ inputs.run_project_creation }}" = "true" ]; then
             args="$args --run-project-creation"
