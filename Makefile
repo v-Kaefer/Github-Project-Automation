@@ -8,11 +8,13 @@ CONFIG ?= project_setup.json
 PROJECT_NUMBER ?=
 OWNER ?=
 FORCE ?= 0
+LIVE ?= 0
 
 WORKDIR := $(if $(strip $(TARGET)),$(TARGET),.)
 FORCE_FLAG := $(if $(filter 1 true yes on,$(FORCE)),--force,)
 OWNER_FLAG := $(if $(strip $(OWNER)),--owner "$(OWNER)",)
 PROJECT_TYPE_FLAG := $(if $(strip $(PROJECT_TYPE)),--project-type "$(PROJECT_TYPE)",)
+DRY_RUN_FLAG := $(if $(filter 1 true yes on,$(LIVE)),,--dry-run)
 
 .PHONY: help install dev-install compile test quality check doctor discover require-target require-repo require-project-number init init-dry plan apply setup setup-live labels milestones issues project-create project-sync clean clean-generated
 
@@ -43,12 +45,13 @@ help:
 	@echo "  make setup TARGET=../project REPO=owner/repo       Init + dry-run"
 	@echo "  make setup-live TARGET=../project REPO=owner/repo  Init + live apply"
 	@echo ""
-	@echo "Individual operations:"
+	@echo "Individual operations (dry-run by default):"
 	@echo "  make labels REPO=owner/repo"
 	@echo "  make milestones REPO=owner/repo"
 	@echo "  make issues REPO=owner/repo"
 	@echo "  make project-create REPO=owner/repo"
 	@echo "  make project-sync REPO=owner/repo PROJECT_NUMBER=1"
+	@echo "  Add LIVE=1 only after reviewing the dry-run output."
 
 install:
 	@echo "==> Installing project_setup"
@@ -108,19 +111,19 @@ setup: init plan
 setup-live: init apply
 
 labels: require-repo
-	cd "$(WORKDIR)" && $(PYTHON) -m project_setup labels sync --repo "$(REPO)" --file config/project/labels.json --dry-run
+	cd "$(WORKDIR)" && $(PYTHON) -m project_setup labels sync --repo "$(REPO)" --file config/project/labels.json $(DRY_RUN_FLAG)
 
 milestones: require-repo
-	cd "$(WORKDIR)" && $(PYTHON) -m project_setup milestones sync --repo "$(REPO)" --file config/project/milestones.json --dry-run
+	cd "$(WORKDIR)" && $(PYTHON) -m project_setup milestones sync --repo "$(REPO)" --file config/project/milestones.json $(DRY_RUN_FLAG)
 
 issues: require-repo
-	cd "$(WORKDIR)" && $(PYTHON) -m project_setup issues generate --repo "$(REPO)" --file config/stories/backlog-manifest.json --dry-run
+	cd "$(WORKDIR)" && $(PYTHON) -m project_setup issues generate --repo "$(REPO)" --file config/stories/backlog-manifest.json $(DRY_RUN_FLAG)
 
 project-create: require-repo
-	cd "$(WORKDIR)" && $(PYTHON) -m project_setup project create --repo "$(REPO)" --file config/project/project-definition.json --dry-run
+	cd "$(WORKDIR)" && $(PYTHON) -m project_setup project create --repo "$(REPO)" --file config/project/project-definition.json $(DRY_RUN_FLAG)
 
 project-sync: require-repo require-project-number
-	cd "$(WORKDIR)" && $(PYTHON) -m project_setup project sync --repo "$(REPO)" --project-number "$(PROJECT_NUMBER)" $(OWNER_FLAG) --file config/project/project-definition.json --dry-run
+	cd "$(WORKDIR)" && $(PYTHON) -m project_setup project sync --repo "$(REPO)" --project-number "$(PROJECT_NUMBER)" $(OWNER_FLAG) --file config/project/project-definition.json $(DRY_RUN_FLAG)
 
 clean-generated:
 	@$(PYTHON) -c "from pathlib import Path; import shutil; [shutil.rmtree(path, ignore_errors=True) for path in list(Path('.').rglob('__pycache__'))]; [path.unlink(missing_ok=True) for pattern in ('*.pyc','*.pyo') for path in list(Path('.').rglob(pattern))]"
