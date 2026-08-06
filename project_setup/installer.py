@@ -6,6 +6,8 @@ import shutil
 
 
 CORE_TEMPLATE_FILES = (
+    ".env.example",
+    "Makefile",
     ".github/ISSUE_TEMPLATE/bug-report.yml",
     ".github/ISSUE_TEMPLATE/task-sub-issue.yml",
     ".github/ISSUE_TEMPLATE/user-story.yml",
@@ -78,10 +80,18 @@ def install_repository(
         source_path = source_root / source_relative
         destination = target_root / destination_relative
         if not source_path.is_file():
-            raise FileNotFoundError(f"Project setup template is missing: {source_path}")
+            raise FileNotFoundError(
+                f"Project setup template is missing: {source_path}. "
+                "Restore the source file before retrying the installation."
+            )
         if destination.exists() and not force:
             skipped.append(destination_relative)
             print(f"skipped existing: {destination_relative}")
+            if destination_relative in {"Makefile", ".env.example"}:
+                print(
+                    f"  Review the installed template manually before merging it into the existing {destination_relative}. "
+                    "Use --force only after reviewing the differences."
+                )
             continue
         if dry_run:
             copied.append(destination_relative)
@@ -93,4 +103,6 @@ def install_repository(
         print(f"copied: {destination_relative}")
 
     print(f"Project setup installation finished: copied={len(copied)}, skipped={len(skipped)}")
+    if ".env.example" in copied:
+        print("Next: copy .env.example to .env, configure only required values, and run `make doctor`.")
     return InstallResult(tuple(copied), tuple(skipped))
