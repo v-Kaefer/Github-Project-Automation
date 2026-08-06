@@ -1,0 +1,38 @@
+# Reference copy of .github/workflows/project-setup.yml.
+# The installer copies the active workflow directly; keep this file only for documentation.
+name: Project setup
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Plan changes without writing to GitHub"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run project setup
+        env:
+          GITHUB_TOKEN: ${{ secrets.PROJECT_SETUP_PAT || github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            python -m project_setup apply --dry-run
+          else
+            python -m project_setup apply --no-dry-run
+          fi
