@@ -6,7 +6,14 @@ from pathlib import Path
 
 from .auto_label import apply_auto_labels
 from .discovery import SUPPORTED_PROJECT_TYPES, run_discovery
-from .github import GitHubClient, get_token, require_client
+from .github import (
+    GitHubClient,
+    get_project_pat,
+    get_token,
+    load_env_file,
+    require_client,
+    require_project_client,
+)
 from .installer import PROFILE_FILES, install_repository
 from .issue_milestones import sync_issue_milestones
 from .issues import generate_issues
@@ -20,7 +27,11 @@ from .runner import load_project_setup_config, run_project_setup
 def repo_arg(value: str | None) -> str:
     repository = value or os.getenv("GITHUB_REPOSITORY")
     if not repository:
-        raise SystemExit("Missing --repo and GITHUB_REPOSITORY")
+        raise SystemExit(
+            "Missing target repository.\n"
+            "Fix: pass `--repo owner/repository`, use `REPO=owner/repository` with Make, "
+            "or set GITHUB_REPOSITORY in .env."
+        )
     return repository
 
 
@@ -41,19 +52,64 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 def cmd_doctor(args: argparse.Namespace) -> int:
     config_path = Path(args.config)
-    print("python_module=project_setup")
+    environment_path = load_env_file()
+    project_pat = get_project_pat()
+    github_token = get_token()
+    failures = 0
+
+    print("==> Environment")
+    print(f"python_module=project_setup")
+    print(f"working_directory={Path.cwd()}")
+    print(f"env_file={environment_path or (Path.cwd() / '.env')} exists={'yes' if environment_path else 'no'}")
+    print(f"github_repository={os.getenv('GITHUB_REPOSITORY') or 'missing'}")
+    print(f"github_token={'configured' if github_token else 'missing'}")
+    print(f"project_setup_pat={'configured' if project_pat else 'missing'}")
+
+    if not environment_path:
+        print("WARNING: .env was not found.")
+        print("  Fix: copy .env.example to .env and fill only the values required for your workflow.")
+    if not github_token:
+        print("WARNING: no GitHub authentication is available for live repository operations.")
+        print("  Fix: set PROJECT_SETUP_PAT in .env, set GITHUB_TOKEN/GH_TOKEN, or run `gh auth login`.")
+    if not project_pat:
+        print("INFO: PROJECT_SETUP_PAT is required only for GitHub Projects v2 creation or synchronization.")
+        print("  Setup: Settings > Developer settings > Personal access tokens > Tokens (classic).")
+        print("  Required scopes: repo and project. Save the token as PROJECT_SETUP_PAT in .env.")
+
+    print("==> Configuration")
     print(f"config={config_path.resolve()}")
-    print(f"config_exists={config_path.is_file()}")
-    print(f"github_token={'configured' if get_token() else 'missing'}")
-    if config_path.is_file():
-        try:
-            config = load_project_setup_config(str(config_path))
-        except (OSError, ValueError) as exc:
-            print(f"config_error={exc}")
-            return 1
-        for key in ("labelsFile", "milestonesFile", "projectDefinitionFile", "backlogManifestFile"):
-            path = Path(config[key])
-            print(f"{key}={path} exists={path.is_file()}")
+    print(f"config_exists={'yes' if config_path.is_file() else 'no'}")
+    if not config_path.is_file():
+        print(f"ERROR: configuration file is missing: {config_path}")
+        print("  Fix: restore project_setup.json or pass --config <path>.")
+        return 1
+
+    try:
+        config = load_project_setup_config(str(config_path))
+    except (OSError, ValueError) as exc:
+        print(f"ERROR: configuration could not be loaded: {exc}")
+        print("  Fix: correct project_setup.json and run `make doctor` again.")
+        return 1
+
+    for key in ("labelsFile", "milestonesFile", "projectDefinitionFile", "backlogManifestFile"):
+        path = Path(config[key])
+        exists = path.is_file()
+        print(f"{key}={path} exists={'yes' if exists else 'no'}")
+        if not exists:
+            failures += 1
+            print(f"  ERROR: referenced file is missing: {path}")
+            print(f"  Fix: create the file or update `{key}` in {config_path}.")
+
+    defaults = config.get("defaults", {})
+    if defaults.get("runProjectCreation", False) and not project_pat:
+        failures += 1
+        print("ERROR: runProjectCreation is enabled but PROJECT_SETUP_PAT is missing.")
+        print("  Fix: configure PROJECT_SETUP_PAT in .env or disable runProjectCreation until the token is ready.")
+
+    if failures:
+        print(f"Doctor found {failures} blocking problem(s). No GitHub API changes were made.")
+        return 1
+    print("Doctor completed. Local files are valid; no GitHub API changes were made.")
     return 0
 
 
@@ -79,13 +135,14 @@ def cmd_issues_generate(args: argparse.Namespace) -> int:
 
 
 def cmd_project_create(args: argparse.Namespace) -> int:
-    create_project(GitHubClient("") if args.dry_run else require_client(), repo_arg(args.repo), args.file, args.dry_run)
+    client = GitHubClient("") if args.dry_run else require_project_client()
+    create_project(client, repo_arg(args.repo), args.file, args.dry_run)
     return 0
 
 
 def cmd_project_sync(args: argparse.Namespace) -> int:
     sync_project(
-        require_client(),
+        require_project_client(),
         repo_arg(args.repo),
         args.file,
         args.project_number,
@@ -104,7 +161,10 @@ def cmd_issue_milestones_sync(args: argparse.Namespace) -> int:
 def cmd_auto_label_apply(args: argparse.Namespace) -> int:
     event_path = args.event_path or os.getenv("GITHUB_EVENT_PATH")
     if not event_path:
-        raise SystemExit("Missing --event-path and GITHUB_EVENT_PATH")
+        raise SystemExit(
+            "Missing GitHub event payload.\n"
+            "Fix: pass --event-path <file> locally. GitHub Actions provides GITHUB_EVENT_PATH automatically."
+        )
     return apply_auto_labels(repo_arg(args.repo), event_path, args.labels_file, optional_client(), args.dry_run)
 
 
@@ -136,7 +196,12 @@ def cmd_apply(args: argparse.Namespace) -> int:
         "run_issue_generation": args.run_issue_generation if args.run_issue_generation is not None else defaults.get("runIssueGeneration", False),
         "link_subissues": args.link_subissues if args.link_subissues is not None else defaults.get("linkSubissues", False),
     }
-    client = GitHubClient("") if values["dry_run"] else require_client()
+    if values["dry_run"]:
+        client = GitHubClient("")
+    elif values["run_project_creation"]:
+        client = require_project_client()
+    else:
+        client = require_client()
     run_project_setup(client, repo_arg(args.repo), config, **values)
     return 0
 
@@ -149,7 +214,7 @@ def add_bool_pair(parser: argparse.ArgumentParser, name: str, destination: str, 
 
 def add_apply_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--repo", default=os.getenv("GITHUB_REPOSITORY"))
-    parser.add_argument("--config", default="project_setup.json")
+    parser.add_argument("--config", default=os.getenv("PROJECT_SETUP_CONFIG", "project_setup.json"))
     dry_run = parser.add_mutually_exclusive_group()
     dry_run.add_argument("--dry-run", dest="dry_run", action="store_true", default=None)
     dry_run.add_argument("--no-dry-run", dest="dry_run", action="store_false")
@@ -177,7 +242,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     discover = subcommands.add_parser("discover", help="Inspect a repository and recommend setup options")
     discover.add_argument("--repo")
-    discover.add_argument("--config", default="project_setup.json")
+    discover.add_argument("--config", default=os.getenv("PROJECT_SETUP_CONFIG", "project_setup.json"))
     discover.add_argument("--root", default=".")
     discover.add_argument("--project-type", choices=SUPPORTED_PROJECT_TYPES)
     discover.add_argument("--auto", action="store_true", help="Use configuration defaults without prompts")
@@ -186,7 +251,7 @@ def build_parser() -> argparse.ArgumentParser:
     discover.set_defaults(func=run_discovery)
 
     doctor = subcommands.add_parser("doctor", help="Check local project setup prerequisites")
-    doctor.add_argument("--config", default="project_setup.json")
+    doctor.add_argument("--config", default=os.getenv("PROJECT_SETUP_CONFIG", "project_setup.json"))
     doctor.set_defaults(func=cmd_doctor)
 
     labels = subcommands.add_parser("labels")
@@ -263,8 +328,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
-    return int(args.func(args))
+    try:
+        load_env_file()
+        args = build_parser().parse_args(argv)
+        return int(args.func(args))
+    except ValueError as exc:
+        raise SystemExit(f"Configuration error: {exc}\nFix the referenced file and run the command again.") from exc
 
 
 if __name__ == "__main__":
