@@ -73,6 +73,7 @@ def infer_issue_labels(issue: dict) -> set[str]:
 
 def infer_pr_labels(repo: str, pull_request: dict, client: GitHubClient | None) -> set[str]:
     body = pull_request.get("body") or ""
+    current = label_names(pull_request)
     labels: set[str] = set()
     linked_number = linked_issue_number(body)
     if linked_number and client:
@@ -83,7 +84,7 @@ def infer_pr_labels(repo: str, pull_request: dict, client: GitHubClient | None) 
             print(f"warning: could not read linked issue #{linked_number}: {exc}")
     if test_label := find_test_label(body):
         labels.add(test_label)
-    if not any(label.startswith("type:") for label in labels):
+    if not any(label.startswith("type:") for label in labels | current):
         prefix = pull_request.get("head", {}).get("ref", "").split("/", 1)[0].lower()
         if prefix in {"fix", "hotfix"}:
             labels.add("type:bug")
@@ -120,7 +121,10 @@ def apply_auto_labels(
     if dry_run:
         return 0
     if not client:
-        print("Missing GitHub token")
+        print(
+            "Missing GitHub token.\n"
+            "Fix: set PROJECT_SETUP_PAT in .env, set GITHUB_TOKEN/GH_TOKEN, or run `gh auth login`."
+        )
         return 1
     try:
         client.request_json("POST", f"{API_BASE}/repos/{repo}/issues/{number}/labels", {"labels": labels})
