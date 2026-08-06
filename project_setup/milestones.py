@@ -5,12 +5,17 @@ import json
 from .github import API_BASE, GitHubClient, split_repo
 
 
+MILESTONE_LOOKUP_LIMIT = 100
+
+
 def load_milestones(path: str) -> list[dict]:
     with open(path, "r", encoding="utf-8") as file:
         milestones = json.load(file)
     if not isinstance(milestones, list):
         raise ValueError("milestones manifest must be a JSON list")
     for milestone in milestones:
+        if not isinstance(milestone, dict):
+            raise ValueError("each milestone must be a JSON object")
         if not milestone.get("title"):
             raise ValueError("each milestone must define a title")
     return milestones
@@ -27,7 +32,7 @@ def sync_milestones(client: GitHubClient, repo: str, milestones_file: str, dry_r
             print(f"- {milestone['title']} ({milestone.get('due_on', 'no due date')})")
         return
 
-    existing = client.request_json("GET", f"{endpoint}?state=all&per_page=100")
+    existing = client.request_json("GET", f"{endpoint}?state=all&per_page={MILESTONE_LOOKUP_LIMIT}")
     existing_by_title = {item["title"]: item for item in existing}
     for milestone in milestones:
         payload = {
