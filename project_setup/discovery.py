@@ -3,10 +3,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import os
-import shutil
+import shlex
+import subprocess
 import sys
 
-from .github import GitHubClient, get_token, require_client
+from .github import (
+    GitHubClient,
+    get_gh_auth_status,
+    get_token_source,
+    require_client,
+    require_project_client,
+)
 from .runner import load_project_setup_config, run_project_setup
 
 
@@ -35,13 +42,13 @@ class ProjectMatch:
 
 
 def detect_auth_status() -> AuthStatus:
-    token = get_token()
+    token, source = get_token_source()
     if token:
-        source = "environment" if any(os.getenv(name) for name in ("GITHUB_TOKEN", "GH_TOKEN", "PROJECT_SETUP_PAT")) else "gh"
-        return AuthStatus(True, source, "A GitHub token is available")
-    if shutil.which("gh"):
-        return AuthStatus(False, "gh", "gh CLI is installed but no authenticated token was returned")
-    return AuthStatus(False, "missing", "No environment token and gh CLI was not found")
+        return AuthStatus(True, source, f"A GitHub token is available from {source}")
+    gh = get_gh_auth_status()
+    if gh.installed:
+        return AuthStatus(False, "gh", gh.detail)
+    return AuthStatus(False, "missing", "No environment token is configured and GitHub CLI was not found")
 
 
 def _collect_markers(root: Path, patterns: tuple[str, ...]) -> tuple[str, ...]:
@@ -113,14 +120,23 @@ def build_apply_command(
     run_issue_generation: bool,
     link_subissues: bool,
 ) -> str:
-    parts = ["python -m project_setup apply", f"--repo {repo}", f"--config {config_path}"]
-    parts.append("--dry-run" if dry_run else "--no-dry-run")
-    parts.append("--run-labels" if run_labels else "--skip-labels")
-    parts.append("--run-milestones" if run_milestones else "--skip-milestones")
-    parts.append("--run-project-creation" if run_project_creation else "--skip-project-creation")
-    parts.append("--run-issue-generation" if run_issue_generation else "--skip-issue-generation")
-    parts.append("--link-subissues" if link_subissues else "--no-link-subissues")
-    return " ".join(parts)
+    parts = [
+        "python",
+        "-m",
+        "project_setup",
+        "apply",
+        "--repo",
+        repo,
+        "--config",
+        config_path,
+        "--dry-run" if dry_run else "--live",
+        "--run-labels" if run_labels else "--skip-labels",
+        "--run-milestones" if run_milestones else "--skip-milestones",
+        "--run-project-creation" if run_project_creation else "--skip-project-creation",
+        "--run-issue-generation" if run_issue_generation else "--skip-issue-generation",
+        "--link-subissues" if link_subissues else "--no-link-subissues",
+    ]
+    return subprocess.list2cmdline(parts) if os.name == "nt" else shlex.join(parts)
 
 
 def run_discovery(args) -> int:
@@ -128,14 +144,16 @@ def run_discovery(args) -> int:
     repo = args.repo or os.getenv("GITHUB_REPOSITORY")
     if not repo:
         print("Missing --repo and GITHUB_REPOSITORY")
+        print("Fix: pass --repo owner/repository or set GITHUB_REPOSITORY in .env.")
         return 1
 
     auth = detect_auth_status()
     print("==> GitHub auth")
     print(f"Configured: {'yes' if auth.configured else 'no'} ({auth.source})")
+    print(f"Detail: {auth.detail}")
     if not auth.configured:
-        print(auth.detail)
         print(f"Expected workflow secret: {config.get('secretName', 'PROJECT_SETUP_PAT')}")
+        print("Fix: set a supported token in .env or repair the GitHub CLI session with `gh auth login`.")
         return 1
 
     print("==> Project detection")
@@ -150,7 +168,7 @@ def run_discovery(args) -> int:
 
     defaults = config.get("defaults", {})
     values = {
-        "dry_run": defaults.get("dryRun", True),
+        "dry_run": True,
         "run_labels": defaults.get("runLabels", True),
         "run_milestones": defaults.get("runMilestones", True),
         "run_project_creation": defaults.get("runProjectCreation", False),
@@ -159,14 +177,14 @@ def run_discovery(args) -> int:
     }
     interactive = sys.stdin.isatty() and not args.auto
     if interactive:
-        values["dry_run"] = _prompt_bool("Run in dry-run mode?", values["dry_run"])
+        values["dry_run"] = _prompt_bool("Run in dry-run mode?", True)
         values["run_labels"] = _prompt_bool("Sync labels?", values["run_labels"])
         values["run_milestones"] = _prompt_bool("Sync milestones?", values["run_milestones"])
         values["run_project_creation"] = _prompt_bool("Create Project v2?", values["run_project_creation"])
         values["run_issue_generation"] = _prompt_bool("Generate issues and tasks?", values["run_issue_generation"])
         values["link_subissues"] = _prompt_bool("Link generated tasks as sub-issues?", values["link_subissues"])
     else:
-        print("Using configuration defaults (non-interactive).")
+        print("Using configuration modules with dry-run enforced for non-interactive discovery.")
 
     print("==> Recommended command")
     print(build_apply_command(repo, args.config, **values))
@@ -176,6 +194,11 @@ def run_discovery(args) -> int:
         if not sys.stdin.isatty() or not _prompt_bool("Run the selected setup now?", False):
             print("Confirmation required; no changes were applied.")
             return 1
-    client = GitHubClient("") if values["dry_run"] else require_client()
+    if values["dry_run"]:
+        client = GitHubClient("")
+    elif values["run_project_creation"]:
+        client = require_project_client()
+    else:
+        client = require_client()
     run_project_setup(client, repo, config, **values)
     return 0
