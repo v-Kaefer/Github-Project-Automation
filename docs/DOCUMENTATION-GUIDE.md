@@ -19,10 +19,8 @@ This guide maps the reusable configuration, workflows and operational documentat
 | `.github/workflows/project-setup.yml` | Manual dry-run or live setup | `project_setup/cli.py`, `project_setup/runner.py`, `project_setup.json` |
 | `.github/workflows/auto-label.yml` | Infer labels for issues and PRs | `project_setup/auto_label.py` |
 | `.github/workflows/pr-metadata.yml` | Validate branch names and PR metadata | `project_setup/pr_validation.py` |
-| `.github/workflows/main-source-branch.yml` | Restrict PR sources targeting `main` | `docs/repo/branching-policy.md` |
+| `.github/workflows/main-source-branch.yml` | Restrict PR sources targeting `main` | `.github/workflows/main-source-branch.yml`, `docs/repo/branching-policy.md` |
 | `.github/workflows/repo-quality.yml` | Validate this tool repository | `Makefile`, `scripts/validation/repo_quality.py`, `tests/` |
-
-Framework-specific workflows belong under `templates/profiles/<profile>/` and are copied only when that profile is selected.
 
 ## Adding a milestone template
 
@@ -39,7 +37,7 @@ python -m project_setup apply --repo owner/repository --dry-run
 6. Apply only after reviewing the proposed changes:
 
 ```bash
-python -m project_setup apply --repo owner/repository --no-dry-run
+python -m project_setup apply --repo owner/repository --live
 ```
 
 ## Repository structure
@@ -50,7 +48,6 @@ project_setup.json                   File paths and execution defaults
 config/project/                      Labels, milestones and Project v2 definition
 config/stories/                      Backlog manifest
 .github/workflows/                   Generic active workflows
-templates/profiles/                  Optional framework-specific workflows
 docs/repo/                           Operational policies and runbooks
 scripts/validation/                  Cross-platform validation entrypoints
 tests/                               Unit and installation tests
