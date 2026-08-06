@@ -28,15 +28,30 @@ REQUIRED_PATHS = (
     ".github/workflows/auto-label.yml",
     ".github/workflows/pr-metadata.yml",
     ".github/workflows/repo-quality.yml",
+    "scripts/validation/repo_quality.py",
     "scripts/validation/validate_pr_body.py",
     "tests/test_project_setup.py",
 )
+
+# Build legacy names at runtime so this validation file does not contain the exact
+# forbidden strings it is responsible for finding.
+LEGACY_NAMESPACE = "governance"
 FORBIDDEN_REFERENCES = (
-    "governance_bootstrap",
-    "governance_bootstarp",
-    "governance.bootstrap.json",
-    "governance-bootstrap",
+    f"{LEGACY_NAMESPACE}_bootstrap",
+    f"{LEGACY_NAMESPACE}_bootstarp",
+    f"{LEGACY_NAMESPACE}.bootstrap.json",
+    f"{LEGACY_NAMESPACE}-bootstrap",
 )
+
+SCRIPT_REFERENCES = {
+    "scripts/validation/repo_quality.py": (
+        "Makefile",
+    ),
+    "scripts/validation/validate_pr_body.py": (
+        ".github/workflows/pr-metadata.yml",
+    ),
+}
+INSTALLER_MANIFEST = "project_setup/installer.py"
 TEXT_SUFFIXES = {".py", ".md", ".yml", ".yaml", ".json", ".toml", ".txt", ".sh", ".example"}
 
 
@@ -74,6 +89,64 @@ def tracked_files(failures: list[str]) -> list[Path]:
 
     names = result.stdout.decode("utf-8", errors="surrogateescape").split("\0")
     return [ROOT / name for name in names if name]
+
+
+def read_text(relative_path: str, failures: list[str]) -> str | None:
+    path = ROOT / relative_path
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        fail(
+            f"Script reference owner is missing: {relative_path}",
+            failures,
+            "Restore the file or remove its script-reference contract from repo_quality.py.",
+        )
+    except UnicodeDecodeError:
+        fail(
+            f"Script reference owner is not valid UTF-8 text: {relative_path}",
+            failures,
+            "Save the file as UTF-8 and run `make check` again.",
+        )
+    return None
+
+
+def validate_script_references(failures: list[str]) -> None:
+    print("==> Validating script entry points")
+    installer_text = read_text(INSTALLER_MANIFEST, failures)
+
+    for script_path, owners in SCRIPT_REFERENCES.items():
+        script = ROOT / script_path
+        if not script.is_file():
+            fail(
+                f"Referenced script is missing: {script_path}",
+                failures,
+                "Restore the script before using its Makefile or workflow entry point.",
+            )
+            continue
+
+        print(f"script={script_path} exists=yes")
+        for owner in owners:
+            owner_text = read_text(owner, failures)
+            if owner_text is None:
+                continue
+            if script_path not in owner_text:
+                fail(
+                    f"{owner} no longer references {script_path}",
+                    failures,
+                    f"Restore the `{script_path}` invocation in {owner} or update SCRIPT_REFERENCES intentionally.",
+                )
+            else:
+                print(f"  referenced_by={owner} status=ok")
+
+        if installer_text is not None:
+            if script_path not in installer_text:
+                fail(
+                    f"Installer does not copy required script: {script_path}",
+                    failures,
+                    f"Add `{script_path}` to CORE_TEMPLATE_FILES in {INSTALLER_MANIFEST}.",
+                )
+            else:
+                print(f"  installer={INSTALLER_MANIFEST} status=ok")
 
 
 def main() -> int:
@@ -123,6 +196,8 @@ def main() -> int:
                     "Replace the reference with project_setup or remove obsolete documentation.",
                 )
 
+    validate_script_references(failures)
+
     print("==> Validating JSON configuration")
     json_paths = [ROOT / "project_setup.json", *sorted((ROOT / "config").rglob("*.json"))]
     for path in json_paths:
@@ -146,12 +221,17 @@ def main() -> int:
         with (ROOT / "pyproject.toml").open("rb") as file:
             pyproject = tomllib.load(file)
         scripts = pyproject.get("project", {}).get("scripts", {})
-        if scripts.get("project-setup") != "project_setup.cli:main":
-            fail(
-                "pyproject.toml does not expose `project-setup = project_setup.cli:main`.",
-                failures,
-                "Restore the project-setup entry point under [project.scripts].",
-            )
+        expected_entry_points = {
+            "project-setup": "project_setup.cli:main",
+            "project_setup": "project_setup.cli:main",
+        }
+        for command, expected in expected_entry_points.items():
+            if scripts.get(command) != expected:
+                fail(
+                    f"pyproject.toml does not expose `{command} = {expected}`.",
+                    failures,
+                    f"Restore the {command} entry point under [project.scripts].",
+                )
     except FileNotFoundError:
         fail("pyproject.toml is missing.", failures, "Restore pyproject.toml before running the checks.")
     except tomllib.TOMLDecodeError as exc:
@@ -163,7 +243,10 @@ def main() -> int:
         print("Review each `Fix:` line above. No remote GitHub changes were made.", file=sys.stderr)
         return 1
 
-    print("Repository quality checks passed: required files, committed artifacts, JSON, and package metadata are valid.")
+    print(
+        "Repository quality checks passed: required files, committed artifacts, script references, JSON, "
+        "and package metadata are valid."
+    )
     return 0
 
 
