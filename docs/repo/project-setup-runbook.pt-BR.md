@@ -105,7 +105,7 @@ O diagnóstico verifica:
 - validade de `project_setup.json`;
 - existência dos manifests referenciados.
 
-Ele não chama mutations nem aplica alterações no GitHub.
+Ele não aplica alterações no GitHub.
 
 ## 5. Inspecionar o repositório-alvo
 
@@ -141,26 +141,43 @@ Revise:
 
 Mantenha `runIssueGeneration` e `runProjectCreation` desativados até concluir a personalização.
 
-## 9. Revisar o plano
+## 9. Revisar o plano completo
 
 ```bash
 make plan TARGET=../meu-projeto REPO=owner/repositorio
 ```
 
-## 10. Aplicar
+O plano é sempre dry-run.
+
+## 10. Aplicar a configuração completa
 
 ```bash
 make apply TARGET=../meu-projeto REPO=owner/repositorio
 ```
 
-Para Project v2:
+## 11. Executar módulos individualmente
+
+Primeiro execute em dry-run:
 
 ```bash
+make labels TARGET=../meu-projeto REPO=owner/repositorio
+make milestones TARGET=../meu-projeto REPO=owner/repositorio
+make issues TARGET=../meu-projeto REPO=owner/repositorio
 make project-create TARGET=../meu-projeto REPO=owner/repositorio
 make project-sync TARGET=../meu-projeto REPO=owner/repositorio PROJECT_NUMBER=1
 ```
 
-## 11. Execução manual no Actions
+Após revisar a saída, habilite a escrita explicitamente:
+
+```bash
+make labels TARGET=../meu-projeto REPO=owner/repositorio LIVE=1
+make project-create TARGET=../meu-projeto REPO=owner/repositorio LIVE=1
+make project-sync TARGET=../meu-projeto REPO=owner/repositorio PROJECT_NUMBER=1 LIVE=1
+```
+
+Operações reais de Project v2 exigem `PROJECT_SETUP_PAT` no `.env` do repositório-alvo.
+
+## 12. Execução manual no Actions
 
 No repositório-alvo:
 
