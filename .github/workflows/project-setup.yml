@@ -87,7 +87,7 @@ jobs:
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             args="$args --dry-run"
           else
-            args="$args --no-dry-run"
+            args="$args --live"
           fi
           if [ "${{ inputs.run_labels_sync }}" = "true" ]; then
             args="$args --run-labels"
