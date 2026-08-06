@@ -19,6 +19,23 @@ O comando:
 
 Caches locais em `__pycache__` não são tratados como arquivos versionados. Quando houver uma falha real, a saída apresenta uma instrução `Fix:`.
 
+### Windows
+
+O Makefile detecta `OS=Windows_NT`, usa `python` por padrão e não depende do comando Unix `test`. Em Linux, macOS, Git Bash e WSL, o padrão permanece `python3`.
+
+A detecção pode ser conferida com:
+
+```bash
+make help
+make doctor
+```
+
+O comando Python ainda pode ser sobrescrito explicitamente:
+
+```powershell
+make PYTHON=py check
+```
+
 ## 2. Criar o ambiente local
 
 PowerShell:
@@ -57,7 +74,17 @@ Para execução local sem Project v2, também é possível usar uma sessão aute
 
 ```bash
 gh auth login
+gh auth status
 ```
+
+O `make doctor` diferencia:
+
+- GitHub CLI ausente;
+- GitHub CLI instalada com autenticação válida;
+- GitHub CLI instalada com autenticação inválida;
+- token recebido por `GITHUB_TOKEN`, `GH_TOKEN`, `PROJECT_SETUP_PAT` ou `gh`.
+
+Uma autenticação inválida do `gh` não bloqueia a ferramenta quando existe outro token válido no `.env`.
 
 ### GitHub Projects v2
 
@@ -98,9 +125,11 @@ make doctor
 
 O diagnóstico verifica:
 
+- sistema operacional e executável Python;
 - presença do `.env`;
 - repositório configurado;
-- disponibilidade de autenticação;
+- disponibilidade e origem da autenticação;
+- estado de `gh auth`;
 - presença específica de `PROJECT_SETUP_PAT`;
 - validade de `project_setup.json`;
 - existência dos manifests referenciados.
@@ -113,11 +142,15 @@ Ele não aplica alterações no GitHub.
 make discover TARGET=../meu-projeto REPO=owner/repositorio
 ```
 
+O modo automático sempre recomenda dry-run. Uma aplicação real pela descoberta exige confirmação explícita.
+
 ## 6. Simular a instalação
 
 ```bash
 make init-dry TARGET=../meu-projeto PROFILE=core
 ```
+
+O dry-run não cria o diretório-alvo.
 
 ## 7. Instalar os arquivos
 
@@ -126,6 +159,14 @@ make init TARGET=../meu-projeto
 ```
 
 O instalador também leva `Makefile` e `.env.example`. Arquivos existentes são preservados e devem ser mesclados manualmente. A substituição consciente exige `FORCE=1`.
+
+### Fluxo combinado
+
+```bash
+make setup TARGET=../meu-projeto REPO=owner/repositorio
+```
+
+Esse comando executa a instalação real dos arquivos ausentes e, em seguida, o plano remoto em dry-run. Ele não aplica alterações na API do GitHub.
 
 ## 8. Personalizar
 
@@ -151,8 +192,22 @@ O plano é sempre dry-run.
 
 ## 10. Aplicar a configuração completa
 
+Sem `LIVE=1`, `make apply` continua em dry-run:
+
 ```bash
 make apply TARGET=../meu-projeto REPO=owner/repositorio
+```
+
+A escrita exige confirmação explícita:
+
+```bash
+make apply TARGET=../meu-projeto REPO=owner/repositorio LIVE=1
+```
+
+Também existe o atalho combinado explícito:
+
+```bash
+make setup-live TARGET=../meu-projeto REPO=owner/repositorio
 ```
 
 ## 11. Executar módulos individualmente
@@ -171,11 +226,15 @@ Após revisar a saída, habilite a escrita explicitamente:
 
 ```bash
 make labels TARGET=../meu-projeto REPO=owner/repositorio LIVE=1
+make milestones TARGET=../meu-projeto REPO=owner/repositorio LIVE=1
+make issues TARGET=../meu-projeto REPO=owner/repositorio LIVE=1
 make project-create TARGET=../meu-projeto REPO=owner/repositorio LIVE=1
 make project-sync TARGET=../meu-projeto REPO=owner/repositorio PROJECT_NUMBER=1 LIVE=1
 ```
 
 Operações reais de Project v2 exigem `PROJECT_SETUP_PAT` no `.env` do repositório-alvo.
+
+Sem PAT, `project-sync` em dry-run produz um preview offline da definição local e informa que a comparação remota não foi executada.
 
 ## 12. Execução manual no Actions
 
