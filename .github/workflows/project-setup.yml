@@ -52,6 +52,9 @@ jobs:
           python-version: "3.11"
 
       - name: Validate embedded setup package and configuration
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PROJECT_SETUP_PAT: ${{ secrets.PROJECT_SETUP_PAT }}
         run: |
           set -euo pipefail
           python -m compileall -q project_setup
