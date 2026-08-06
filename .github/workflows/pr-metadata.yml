@@ -7,7 +7,6 @@ on:
 permissions:
   contents: read
   issues: write
-  pull-requests: write
 
 concurrency:
   group: pr-metadata-${{ github.event.pull_request.number }}
@@ -19,24 +18,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout trusted base commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
       - name: Validate branch name and pull request metadata
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_TOKEN: ${{ github.token }}
-        run: >-
-          python scripts/validation/validate_pr_body.py
-          --branch "${{ github.event.pull_request.head.ref }}"
-          --base-branch "${{ github.event.pull_request.base.ref }}"
-          --repo "${{ github.repository }}"
-          --pr-number "${{ github.event.pull_request.number }}"
-          --comment
+        run: |
+          set -euo pipefail
+          python scripts/validation/validate_pr_body.py \
+            --branch "$HEAD_REF" \
+            --base-branch "$BASE_REF" \
+            --repo "$REPOSITORY" \
+            --pr-number "$PR_NUMBER" \
+            --comment
