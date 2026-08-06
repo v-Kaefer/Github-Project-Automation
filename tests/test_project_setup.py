@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import redirect_stdout
 import io
 import json
 import os
@@ -7,13 +8,12 @@ from pathlib import Path
 from types import SimpleNamespace
 import tempfile
 import unittest
-from contextlib import redirect_stdout
 from unittest.mock import patch
 
-from project_setup.auto_label import infer_issue_labels
+from project_setup.auto_label import infer_issue_labels, infer_pr_labels
 from project_setup.cli import main
 from project_setup.discovery import build_apply_command, detect_project_matches
-from project_setup.github import GitHubClient, get_token, load_env_file, require_project_client
+from project_setup.github import GitHubClient, get_gh_auth_status, get_token, load_env_file, require_project_client
 from project_setup.installer import install_repository
 from project_setup.issue_milestones import milestone_from_body, parent_issue_number_from_body
 from project_setup.issues import load_backlog
@@ -38,6 +38,14 @@ class ProjectSetupTests(unittest.TestCase):
             {"type:user-story", "status:backlog", "priority:high", "test:smoke"},
         )
 
+    def test_existing_pr_type_label_suppresses_branch_fallback(self):
+        pull_request = {
+            "body": "",
+            "labels": [{"name": "type:task"}],
+            "head": {"ref": "fix/example"},
+        }
+        self.assertNotIn("type:bug", infer_pr_labels("owner/repository", pull_request, None))
+
     def test_manifest_loaders_validate_required_fields(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
@@ -45,11 +53,11 @@ class ProjectSetupTests(unittest.TestCase):
             milestones = root / "milestones.json"
             backlog = root / "backlog.json"
             labels.write_text('[{"name":"missing-color"}]', encoding="utf-8")
-            milestones.write_text('[{"description":"missing-title"}]', encoding="utf-8")
+            milestones.write_text('["not-an-object"]', encoding="utf-8")
             backlog.write_text('{"stories":[]}', encoding="utf-8")
             with self.assertRaises(ValueError):
                 load_labels(str(labels))
-            with self.assertRaises(ValueError):
+            with self.assertRaisesRegex(ValueError, "JSON object"):
                 load_milestones(str(milestones))
             with self.assertRaises(ValueError):
                 load_backlog(str(backlog))
@@ -79,6 +87,17 @@ class ProjectSetupTests(unittest.TestCase):
         self.assertIn("[DRY-RUN] Would sync 1 labels", text)
         self.assertIn("[DRY-RUN] Would sync 1 milestones", text)
 
+    def test_individual_commands_default_to_dry_run(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            labels = Path(temporary_directory) / "labels.json"
+            labels.write_text('[{"name":"status:backlog","color":"C5DEF5"}]', encoding="utf-8")
+            with patch.dict(os.environ, {"GITHUB_TOKEN": "", "GH_TOKEN": "", "PROJECT_SETUP_PAT": ""}, clear=False):
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    result = main(["labels", "sync", "--repo", "owner/repository", "--file", str(labels)])
+        self.assertEqual(result, 0)
+        self.assertIn("[DRY-RUN]", output.getvalue())
+
     def test_apply_dry_run_does_not_require_token(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
@@ -95,7 +114,7 @@ class ProjectSetupTests(unittest.TestCase):
                         "projectDefinitionFile": str(root / "project.json"),
                         "backlogManifestFile": str(root / "backlog.json"),
                         "defaults": {
-                            "dryRun": True,
+                            "dryRun": False,
                             "runLabels": True,
                             "runMilestones": True,
                             "runProjectCreation": True,
@@ -110,10 +129,33 @@ class ProjectSetupTests(unittest.TestCase):
             ):
                 output = io.StringIO()
                 with redirect_stdout(output):
-                    result = main(["apply", "--repo", "owner/repository", "--config", str(config), "--dry-run"])
+                    result = main(["apply", "--repo", "owner/repository", "--config", str(config)])
         self.assertEqual(result, 0)
         self.assertIn("[DRY-RUN] Would sync 1 labels", output.getvalue())
         self.assertIn("Project setup finished.", output.getvalue())
+
+    def test_project_sync_without_pat_uses_offline_preview(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            definition = Path(temporary_directory) / "project.json"
+            definition.write_text('{"name":"Board","fields":[{"name":"Status","type":"single_select"}]}', encoding="utf-8")
+            with patch.dict(os.environ, {"PROJECT_SETUP_PAT": ""}, clear=False):
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    result = main(
+                        [
+                            "project",
+                            "sync",
+                            "--repo",
+                            "owner/repository",
+                            "--project-number",
+                            "1",
+                            "--file",
+                            str(definition),
+                        ]
+                    )
+        self.assertEqual(result, 0)
+        self.assertIn("Offline Project v2 preview", output.getvalue())
+        self.assertIn("Remote Project fields, items, and issues were not queried", output.getvalue())
 
     def test_env_file_loads_values_without_overriding_process_environment(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -160,17 +202,16 @@ class ProjectSetupTests(unittest.TestCase):
             self.assertTrue((target / ".github" / "workflows" / "project-setup.yml").is_file())
             self.assertTrue((target / ".env.example").is_file())
             self.assertTrue((target / "Makefile").is_file())
-            self.assertFalse((target / ".github" / "workflows" / "godot-smoke.yml").exists())
 
-    def test_godot_profile_copies_optional_workflow(self):
+    def test_installer_dry_run_does_not_create_target_directory(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
-            target = Path(temporary_directory)
-            install_repository(target, source=ROOT, profile="godot")
-            self.assertTrue((target / ".github" / "workflows" / "godot-smoke.yml").is_file())
+            target = Path(temporary_directory) / "missing-target"
+            install_repository(target, source=ROOT, profile="core", dry_run=True)
+            self.assertFalse(target.exists())
 
-    def test_pull_request_validation_accepts_complete_template(self):
+    def test_pull_request_validation_accepts_complete_template_and_inline_url(self):
         body = """## Linked Issue
-- Closes #123
+- Closes #123 <https://example.com/thread>
 
 ## Milestone
 - M1
@@ -197,10 +238,10 @@ class ProjectSetupTests(unittest.TestCase):
             matches = detect_project_matches(root)
         self.assertEqual([match.project_type for match in matches[:2]], ["python", "node"])
 
-    def test_discovery_builds_project_setup_command(self):
+    def test_discovery_builds_quoted_project_setup_command(self):
         command = build_apply_command(
             "owner/repository",
-            "project_setup.json",
+            "config folder/project_setup.json",
             True,
             True,
             True,
@@ -208,17 +249,28 @@ class ProjectSetupTests(unittest.TestCase):
             False,
             True,
         )
-        self.assertIn("python -m project_setup apply", command)
+        self.assertIn("project_setup", command)
         self.assertIn("--dry-run", command)
         self.assertIn("--skip-project-creation", command)
+        self.assertIn("config folder", command)
 
     def test_get_token_falls_back_to_gh_auth(self):
         with patch.dict(os.environ, {"GITHUB_TOKEN": "", "GH_TOKEN": "", "PROJECT_SETUP_PAT": ""}, clear=False), patch(
             "project_setup.github.shutil.which", return_value="/usr/bin/gh"
         ), patch("project_setup.github.subprocess.run") as run:
-            run.return_value = SimpleNamespace(returncode=0, stdout="token-from-gh\n")
+            run.return_value = SimpleNamespace(returncode=0, stdout="token-from-gh\n", stderr="")
             token = get_token()
         self.assertEqual(token, "token-from-gh")
+
+    def test_gh_auth_status_reports_invalid_session(self):
+        with patch("project_setup.github.shutil.which", return_value="gh"), patch(
+            "project_setup.github.subprocess.run"
+        ) as run:
+            run.return_value = SimpleNamespace(returncode=1, stdout="", stderr="invalid token\n")
+            status = get_gh_auth_status()
+        self.assertTrue(status.installed)
+        self.assertFalse(status.authenticated)
+        self.assertEqual(status.detail, "invalid token")
 
     def test_discover_auto_mode_reports_summary(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -235,7 +287,7 @@ class ProjectSetupTests(unittest.TestCase):
                         "projectDefinitionFile": "project.json",
                         "backlogManifestFile": "backlog.json",
                         "secretName": "PROJECT_SETUP_PAT",
-                        "defaults": {"dryRun": True, "runLabels": True, "runMilestones": True},
+                        "defaults": {"dryRun": False, "runLabels": True, "runMilestones": True},
                     }
                 ),
                 encoding="utf-8",
@@ -257,9 +309,10 @@ class ProjectSetupTests(unittest.TestCase):
                     )
         self.assertEqual(result, 0)
         text = output.getvalue()
-        self.assertIn("Configured: yes (environment)", text)
+        self.assertIn("Configured: yes (PROJECT_SETUP_PAT)", text)
         self.assertIn("Detected project type: go", text)
-        self.assertIn("python -m project_setup apply", text)
+        self.assertIn("project_setup", text)
+        self.assertIn("--dry-run", text)
 
 
 if __name__ == "__main__":
