@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
@@ -9,6 +10,7 @@ import subprocess
 import time
 from typing import Any
 import urllib.error
+import urllib.parse
 import urllib.request
 
 
@@ -16,6 +18,8 @@ API_BASE = "https://api.github.com"
 GRAPHQL_URL = f"{API_BASE}/graphql"
 API_VERSION = "2022-11-28"
 RETRYABLE_HTTP_STATUS = {429, 502, 503, 504}
+IDEMPOTENT_METHODS = {"GET", "HEAD"}
+HTTP_TIMEOUT_SECONDS = 30
 ENV_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -26,6 +30,13 @@ class GitHubRequestError(RuntimeError):
         self.url = url
         self.status = status
         self.details = details
+
+
+@dataclass(frozen=True)
+class GhAuthStatus:
+    installed: bool
+    authenticated: bool
+    detail: str
 
 
 def load_env_file(path: str | os.PathLike[str] | None = None) -> Path | None:
@@ -60,21 +71,52 @@ def load_env_file(path: str | os.PathLike[str] | None = None) -> Path | None:
     return candidate.resolve()
 
 
-def get_token() -> str | None:
-    load_env_file()
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or os.environ.get("PROJECT_SETUP_PAT")
-    if token and token.strip():
-        return token.strip()
+def _compact_detail(text: str, fallback: str) -> str:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return lines[0] if lines else fallback
+
+
+def get_gh_auth_status() -> GhAuthStatus:
     gh = shutil.which("gh")
     if not gh:
-        return None
+        return GhAuthStatus(False, False, "GitHub CLI is not installed or is not available on PATH")
+    try:
+        result = subprocess.run(
+            [gh, "auth", "status"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except subprocess.TimeoutExpired:
+        return GhAuthStatus(True, False, "`gh auth status` timed out after 10 seconds")
+    except OSError as exc:
+        return GhAuthStatus(True, False, f"Could not execute `gh auth status`: {exc}")
+    detail = _compact_detail(
+        result.stdout if result.returncode == 0 else result.stderr,
+        "GitHub CLI authentication is valid" if result.returncode == 0 else "GitHub CLI authentication is invalid",
+    )
+    return GhAuthStatus(True, result.returncode == 0, detail)
+
+
+def get_token_source() -> tuple[str | None, str]:
+    load_env_file()
+    for variable in ("GITHUB_TOKEN", "GH_TOKEN", "PROJECT_SETUP_PAT"):
+        token = os.environ.get(variable)
+        if token and token.strip():
+            return token.strip(), variable
+    gh = shutil.which("gh")
+    if not gh:
+        return None, "missing"
     try:
         result = subprocess.run([gh, "auth", "token"], capture_output=True, text=True, timeout=10)
     except (OSError, subprocess.TimeoutExpired):
-        return None
-    if result.returncode != 0:
-        return None
-    return result.stdout.strip() or None
+        return None, "gh-invalid"
+    token = result.stdout.strip() if result.returncode == 0 else ""
+    return (token, "gh") if token else (None, "gh-invalid")
+
+
+def get_token() -> str | None:
+    return get_token_source()[0]
 
 
 def get_project_pat() -> str | None:
@@ -90,6 +132,12 @@ def split_repo(repo: str) -> tuple[str, str]:
     if not owner or not name:
         raise ValueError("repository must use owner/name format")
     return owner, name
+
+
+def _validate_github_api_url(url: str) -> None:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme != "https" or parsed.hostname != "api.github.com":
+        raise ValueError(f"Unsupported GitHub API URL: {url}")
 
 
 class GitHubClient:
@@ -108,29 +156,40 @@ class GitHubClient:
         return headers
 
     def request_json(self, method: str, url: str, payload: Any = None, accept: str = "application/vnd.github+json") -> Any:
+        normalized_method = method.upper()
+        _validate_github_api_url(url)
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
+        retry_allowed = normalized_method in IDEMPOTENT_METHODS
         for attempt in range(1, 6):
-            request = urllib.request.Request(url, data=data, headers=self._headers(accept), method=method)
+            request = urllib.request.Request(
+                url,
+                data=data,
+                headers=self._headers(accept),
+                method=normalized_method,
+            )
             try:
-                with urllib.request.urlopen(request) as response:
+                with urllib.request.urlopen(  # noqa: S310 - URL is restricted to https://api.github.com above.
+                    request,
+                    timeout=HTTP_TIMEOUT_SECONDS,
+                ) as response:
                     body = response.read().decode("utf-8")
                     return json.loads(body) if body else {}
             except urllib.error.HTTPError as exc:
                 details = exc.read().decode("utf-8", errors="replace")
-                if exc.code in RETRYABLE_HTTP_STATUS and attempt < 5:
+                if retry_allowed and exc.code in RETRYABLE_HTTP_STATUS and attempt < 5:
                     retry_after = exc.headers.get("Retry-After")
                     wait_seconds = int(retry_after) if retry_after and retry_after.isdigit() else attempt * 2
-                    print(f"warning: GitHub returned HTTP {exc.code}; retrying in {wait_seconds}s")
+                    print(f"warning: GitHub returned HTTP {exc.code}; retrying read in {wait_seconds}s")
                     time.sleep(wait_seconds)
                     continue
-                raise GitHubRequestError(method, url, exc.code, details) from exc
+                raise GitHubRequestError(normalized_method, url, exc.code, details) from exc
             except urllib.error.URLError as exc:
-                if attempt < 5:
+                if retry_allowed and attempt < 5:
                     wait_seconds = attempt * 2
-                    print(f"warning: GitHub request failed; retrying in {wait_seconds}s: {exc.reason}")
+                    print(f"warning: GitHub read failed; retrying in {wait_seconds}s: {exc.reason}")
                     time.sleep(wait_seconds)
                     continue
-                raise
+                raise GitHubRequestError(normalized_method, url, 0, str(exc.reason)) from exc
         raise RuntimeError("GitHub request exhausted retries")
 
     def paginated(self, url: str) -> list[dict[str, Any]]:
@@ -179,12 +238,20 @@ class GitHubClient:
 
 
 def require_client() -> GitHubClient:
-    token = get_token()
+    token, source = get_token_source()
     if not token:
-        raise SystemExit(
-            "No GitHub token is available. Copy .env.example to .env and set PROJECT_SETUP_PAT, "
-            "set GITHUB_TOKEN/GH_TOKEN, or authenticate the GitHub CLI with `gh auth login`."
+        gh = get_gh_auth_status()
+        gh_guidance = (
+            f"GitHub CLI status: {gh.detail}.\n" if gh.installed else "GitHub CLI is not installed.\n"
         )
+        raise SystemExit(
+            "No GitHub token is available.\n"
+            f"{gh_guidance}"
+            "Fix: copy .env.example to .env and set PROJECT_SETUP_PAT, set GITHUB_TOKEN/GH_TOKEN, "
+            "or repair the CLI session with `gh auth login`."
+        )
+    if source == "gh-invalid":
+        raise SystemExit("GitHub CLI authentication is invalid. Fix: run `gh auth login` and retry.")
     return GitHubClient(token)
 
 
