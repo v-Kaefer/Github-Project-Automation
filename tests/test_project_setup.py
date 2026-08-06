@@ -13,7 +13,7 @@ from unittest.mock import patch
 from project_setup.auto_label import infer_issue_labels
 from project_setup.cli import main
 from project_setup.discovery import build_apply_command, detect_project_matches
-from project_setup.github import GitHubClient, get_token
+from project_setup.github import GitHubClient, get_token, load_env_file, require_project_client
 from project_setup.installer import install_repository
 from project_setup.issue_milestones import milestone_from_body, parent_issue_number_from_body
 from project_setup.issues import load_backlog
@@ -115,6 +115,37 @@ class ProjectSetupTests(unittest.TestCase):
         self.assertIn("[DRY-RUN] Would sync 1 labels", output.getvalue())
         self.assertIn("Project setup finished.", output.getvalue())
 
+    def test_env_file_loads_values_without_overriding_process_environment(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            env_file = Path(temporary_directory) / ".env"
+            env_file.write_text(
+                "GITHUB_REPOSITORY=owner/from-file\nPROJECT_SETUP_PAT=token-from-file\n",
+                encoding="utf-8",
+            )
+            with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/from-process"}, clear=True):
+                loaded = load_env_file(env_file)
+                self.assertEqual(loaded, env_file.resolve())
+                self.assertEqual(os.environ["GITHUB_REPOSITORY"], "owner/from-process")
+                self.assertEqual(os.environ["PROJECT_SETUP_PAT"], "token-from-file")
+
+    def test_invalid_env_file_reports_line_number(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            env_file = Path(temporary_directory) / ".env"
+            env_file.write_text("THIS IS NOT VALID\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "line 1"):
+                load_env_file(env_file)
+
+    def test_project_client_error_explains_pat_setup(self):
+        with patch.dict(os.environ, {"PROJECT_SETUP_PAT": "", "GITHUB_TOKEN": "token"}, clear=False):
+            with self.assertRaises(SystemExit) as context:
+                require_project_client()
+        message = str(context.exception)
+        self.assertIn("PROJECT_SETUP_PAT", message)
+        self.assertIn("Tokens (classic)", message)
+        self.assertIn("repo", message)
+        self.assertIn("project", message)
+        self.assertIn(".env", message)
+
     def test_installer_copies_core_files_and_preserves_existing_files(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             target = Path(temporary_directory)
@@ -127,6 +158,8 @@ class ProjectSetupTests(unittest.TestCase):
             self.assertTrue((target / "project_setup" / "cli.py").is_file())
             self.assertTrue((target / "project_setup" / "discovery.py").is_file())
             self.assertTrue((target / ".github" / "workflows" / "project-setup.yml").is_file())
+            self.assertTrue((target / ".env.example").is_file())
+            self.assertTrue((target / "Makefile").is_file())
             self.assertFalse((target / ".github" / "workflows" / "godot-smoke.yml").exists())
 
     def test_godot_profile_copies_optional_workflow(self):
