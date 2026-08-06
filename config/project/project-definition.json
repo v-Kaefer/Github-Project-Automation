@@ -1,19 +1,40 @@
 {
-  "name": "My Project Board",
-  "description": "Operational board for milestones, user stories, tasks, review layers and validation.",
+  "name": "Project Delivery Board",
+  "description": "Generic delivery board for stories, tasks, bugs and repository work.",
+  "phaseMilestoneMap": {
+    "M0": "Setup",
+    "M1": "Delivery"
+  },
   "fields": [
-    {"name": "Milestone", "type": "single_select", "options": ["M0","M1","M2","M3"]},
-    {"name": "Item Type", "type": "single_select", "options": ["user-story","task","bug","repo","stretch"]},
-    {"name": "Priority", "type": "single_select", "options": ["critical","high","medium","low"]},
-    {"name": "Status", "type": "single_select", "options": ["backlog","ready","in-progress","review","done","blocked"]},
-    {"name": "Test Type", "type": "single_select", "options": ["automated","smoke","manual"]},
-    {"name": "DoD Status", "type": "single_select", "options": ["not-started","partial","ready","done"]},
-    {"name": "Responsible", "type": "text"}
+    {
+      "name": "Phase",
+      "type": "single_select",
+      "options": ["Setup", "Delivery", "Maintenance"]
+    },
+    {
+      "name": "Item Type",
+      "type": "single_select",
+      "options": ["user-story", "task", "bug", "repo", "stretch"]
+    },
+    {
+      "name": "Priority",
+      "type": "single_select",
+      "options": ["critical", "high", "medium", "low"]
+    },
+    {
+      "name": "Status",
+      "type": "single_select",
+      "options": ["backlog", "ready", "in-progress", "in-review", "done", "blocked"]
+    },
+    {
+      "name": "Test Type",
+      "type": "single_select",
+      "options": ["automated", "smoke", "manual"]
+    },
+    {
+      "name": "Milestone",
+      "type": "text"
+    }
   ],
-  "views": [
-    "Board by status",
-    "Roadmap by milestone",
-    "Current milestone",
-    "In review"
-  ]
+  "views": ["Backlog", "Current delivery", "Bugs", "Done"]
 }
