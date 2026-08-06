@@ -1,0 +1,92 @@
+name: Project setup
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_labels_sync:
+        description: "Synchronize labels"
+        required: true
+        default: true
+        type: boolean
+      run_milestones_sync:
+        description: "Synchronize milestones"
+        required: true
+        default: true
+        type: boolean
+      run_issue_generation:
+        description: "Generate backlog issues and tasks"
+        required: true
+        default: false
+        type: boolean
+      run_project_creation:
+        description: "Create a GitHub Project v2"
+        required: true
+        default: false
+        type: boolean
+      dry_run:
+        description: "Plan changes without writing to GitHub"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: project-setup-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate embedded setup package and configuration
+        run: |
+          python -m compileall -q project_setup
+          python -m project_setup doctor --config project_setup.json
+
+      - name: Apply project setup
+        env:
+          GITHUB_TOKEN: ${{ secrets.PROJECT_SETUP_PAT || github.token }}
+          GH_TOKEN: ${{ secrets.PROJECT_SETUP_PAT || github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          args="--config project_setup.json"
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            args="$args --dry-run"
+          else
+            args="$args --no-dry-run"
+          fi
+          if [ "${{ inputs.run_labels_sync }}" = "true" ]; then
+            args="$args --run-labels"
+          else
+            args="$args --skip-labels"
+          fi
+          if [ "${{ inputs.run_milestones_sync }}" = "true" ]; then
+            args="$args --run-milestones"
+          else
+            args="$args --skip-milestones"
+          fi
+          if [ "${{ inputs.run_issue_generation }}" = "true" ]; then
+            args="$args --run-issue-generation"
+          else
+            args="$args --skip-issue-generation"
+          fi
+          if [ "${{ inputs.run_project_creation }}" = "true" ]; then
+            args="$args --run-project-creation"
+          else
+            args="$args --skip-project-creation"
+          fi
+          python -m project_setup apply $args
