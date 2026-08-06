@@ -3,19 +3,26 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "github-governance-bootstrap"
-version = "0.1.0"
-description = "Reusable GitHub governance bootstrap CLI for labels, milestones, projects, issues and sub-issues."
+name = "github-project-setup"
+version = "0.2.0"
+description = "Reusable CLI for setting up GitHub repository workflows, labels, milestones, issues and Projects."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
+keywords = ["github", "automation", "repository", "project-management", "github-actions"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "License :: OSI Approved :: MIT License",
+]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 
 [project.scripts]
-governance = "governance_bootstrap.cli:main"
+project-setup = "project_setup.cli:main"
+project_setup = "project_setup.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["governance_bootstrap*"]
+include = ["project_setup*"]
