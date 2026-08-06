@@ -14,14 +14,15 @@ SCRIPT_REFERENCES = {
     ),
 }
 INSTALLER = "project_setup/installer.py"
+SCRIPT_SUFFIXES = {".py", ".sh", ".ps1"}
 
 
 class ScriptReferenceTests(unittest.TestCase):
     def test_every_validation_script_has_a_registered_entry_point(self):
         discovered = {
             path.relative_to(ROOT).as_posix()
-            for path in (ROOT / "scripts" / "validation").glob("*.py")
-            if path.is_file()
+            for path in (ROOT / "scripts").rglob("*")
+            if path.is_file() and path.suffix.lower() in SCRIPT_SUFFIXES
         }
         self.assertEqual(discovered, set(SCRIPT_REFERENCES))
 
