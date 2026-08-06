@@ -4,11 +4,13 @@ Repositório testado: `v-Kaefer/Github-Project-Automation`
 
 ## Resultado
 
-O teste real foi concluído com sucesso:
+O fluxo principal foi concluído com sucesso:
 
 - Project criado: [Project Delivery Board #6](https://github.com/users/v-Kaefer/projects/6)
 - Issue criada: [#7 — US-00](https://github.com/v-Kaefer/Github-Project-Automation/issues/7)
 - Tasks criadas: [#8 — T-00.1](https://github.com/v-Kaefer/Github-Project-Automation/issues/8) e [#9 — T-00.2](https://github.com/v-Kaefer/Github-Project-Automation/issues/9)
+
+Esse teste valida o caminho principal com configuração válida, PAT válida e conectividade liberada. Ele não substitui testes de repetição, idempotência, manifests inválidos ou falhas intermediárias.
 
 ## O que deu errado inicialmente
 
@@ -16,33 +18,47 @@ O teste real foi concluído com sucesso:
 
 O comando `gh auth status` informou que o token da conta `v-Kaefer` estava inválido. Isso impediu a validação usando o cliente `gh`, mas não afetou a execução posterior pelo token configurado no `.env`.
 
+**Status após correção:** o `make doctor` agora informa separadamente se a GitHub CLI está instalada, se `gh auth` é válido e qual fonte de token está disponível, sem exibir credenciais. Um `gh auth` inválido não bloqueia o uso de uma PAT válida no `.env`.
+
 ### 2. O Makefile não funcionou diretamente no shell padrão do Windows
 
 A primeira execução de `make` falhou por dois motivos de portabilidade:
 
-- o Makefile usa `python3`, que não estava disponível com esse nome no Windows;
-- as regras `require-repo` e semelhantes usam o comando Unix `test`, que não existe no `cmd.exe`.
+- o Makefile usava `python3`, que não estava disponível com esse nome no Windows;
+- as regras de validação usavam o comando Unix `test`, que não existe no `cmd.exe`.
 
-### 3. A primeira tentativa com a CLI usou uma opção inexistente
+**Status após correção:** o Makefile detecta `OS=Windows_NT`, usa `python` no Windows e eliminou a dependência do comando Unix `test`. Git Bash ou WSL deixam de ser requisitos para os alvos básicos.
 
-Foi tentado usar `--no-dry-run`, mas a CLI não possui essa opção. O comportamento correto é:
+### 3. A semântica de dry-run não era uniforme
 
-- `--dry-run`: simulação;
-- sem `--dry-run`: execução real.
+A primeira tentativa misturou a interface do comando agregado com a dos subcomandos individuais. Alguns caminhos aceitavam `--no-dry-run`; outros executavam alterações reais apenas pela ausência de `--dry-run`.
 
-Essa tentativa falhou antes de fazer qualquer alteração.
+**Status após correção:** todos os comandos mutáveis usam dry-run por padrão. A execução real exige `--live`, o alias compatível `--no-dry-run`, ou `LIVE=1` pelo Makefile.
 
 ### 4. A sandbox bloqueou a conexão com o GitHub
 
-Mesmo com o Makefile corrigido para usar `python` e um shell POSIX, a execução recebeu `WinError 10013`, indicando bloqueio de rede pela sandbox. Após autorizar a conexão externa, as operações foram concluídas.
+A execução recebeu `WinError 10013`, indicando bloqueio de rede pela sandbox. Após autorizar a conexão externa, as operações foram concluídas.
 
-## Comando que funcionou no Windows
+Esse bloqueio pertenceu exclusivamente ao ambiente local de teste. Ele não foi classificado como falha do Makefile nem como problema da lógica de automação.
+
+## Comandos atuais no Windows
+
+Dry-run:
 
 ```powershell
-make SHELL='C:/Program Files/Git/bin/sh.exe' PYTHON=python project-create REPO=v-Kaefer/Github-Project-Automation LIVE=1
-make SHELL='C:/Program Files/Git/bin/sh.exe' PYTHON=python issues REPO=v-Kaefer/Github-Project-Automation LIVE=1
+make project-create REPO=v-Kaefer/Github-Project-Automation
+make issues REPO=v-Kaefer/Github-Project-Automation
 ```
+
+Execução real explícita:
+
+```powershell
+make project-create REPO=v-Kaefer/Github-Project-Automation LIVE=1
+make issues REPO=v-Kaefer/Github-Project-Automation LIVE=1
+```
+
+Não é mais necessário definir manualmente `SHELL` ou `PYTHON` em uma instalação padrão do Windows com `python` disponível no `PATH`.
 
 ## Conclusão
 
-Não houve falha na lógica de criação do Project, da issue ou das tasks. Os problemas encontrados foram relacionados ao ambiente Windows, à autenticação do `gh` e à restrição de rede da sandbox.
+O fluxo principal de criação foi validado com sucesso. Os problemas de portabilidade do Makefile, diagnóstico do `gh` e confirmação de execução real foram corrigidos posteriormente. A restrição de rede permaneceu registrada apenas como característica da sandbox utilizada no teste.
