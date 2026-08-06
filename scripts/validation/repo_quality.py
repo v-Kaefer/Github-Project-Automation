@@ -31,6 +31,7 @@ REQUIRED_PATHS = (
     "scripts/validation/repo_quality.py",
     "scripts/validation/validate_pr_body.py",
     "tests/test_project_setup.py",
+    "tests/test_script_references.py",
 )
 
 # Build legacy names at runtime so this validation file does not contain the exact
@@ -52,7 +53,8 @@ SCRIPT_REFERENCES = {
     ),
 }
 INSTALLER_MANIFEST = "project_setup/installer.py"
-TEXT_SUFFIXES = {".py", ".md", ".yml", ".yaml", ".json", ".toml", ".txt", ".sh", ".example"}
+SCRIPT_SUFFIXES = {".py", ".sh", ".ps1"}
+TEXT_SUFFIXES = {".py", ".md", ".yml", ".yaml", ".json", ".toml", ".txt", ".sh", ".ps1", ".example"}
 
 
 def fail(message: str, failures: list[str], fix: str | None = None) -> None:
@@ -114,14 +116,30 @@ def validate_script_references(failures: list[str]) -> None:
     print("==> Validating script entry points")
     installer_text = read_text(INSTALLER_MANIFEST, failures)
 
+    discovered_scripts = {
+        path.relative_to(ROOT).as_posix()
+        for path in (ROOT / "scripts").rglob("*")
+        if path.is_file() and path.suffix.lower() in SCRIPT_SUFFIXES
+    }
+    registered_scripts = set(SCRIPT_REFERENCES)
+
+    for script_path in sorted(discovered_scripts - registered_scripts):
+        fail(
+            f"Script has no registered caller contract: {script_path}",
+            failures,
+            "Add the script and its Makefile/workflow caller to SCRIPT_REFERENCES in repo_quality.py.",
+        )
+
+    for script_path in sorted(registered_scripts - discovered_scripts):
+        fail(
+            f"Registered script is missing from the scripts directory: {script_path}",
+            failures,
+            "Restore the script or remove the obsolete SCRIPT_REFERENCES entry.",
+        )
+
     for script_path, owners in SCRIPT_REFERENCES.items():
         script = ROOT / script_path
         if not script.is_file():
-            fail(
-                f"Referenced script is missing: {script_path}",
-                failures,
-                "Restore the script before using its Makefile or workflow entry point.",
-            )
             continue
 
         print(f"script={script_path} exists=yes")
