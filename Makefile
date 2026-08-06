@@ -14,16 +14,23 @@ FORCE_FLAG := $(if $(filter 1 true yes on,$(FORCE)),--force,)
 OWNER_FLAG := $(if $(strip $(OWNER)),--owner "$(OWNER)",)
 PROJECT_TYPE_FLAG := $(if $(strip $(PROJECT_TYPE)),--project-type "$(PROJECT_TYPE)",)
 
-.PHONY: help install dev-install compile test quality check doctor discover require-target require-repo require-project-number init init-dry plan apply setup setup-live labels milestones issues project-create project-sync clean
+.PHONY: help install dev-install compile test quality check doctor discover require-target require-repo require-project-number init init-dry plan apply setup setup-live labels milestones issues project-create project-sync clean clean-generated
 
 help:
 	@echo "GitHub Project Setup"
 	@echo ""
+	@echo "First-time local setup:"
+	@echo "  1. Copy .env.example to .env"
+	@echo "  2. Add PROJECT_SETUP_PAT when Project v2 operations are needed"
+	@echo "  3. Run make doctor"
+	@echo "  4. Run make check"
+	@echo ""
 	@echo "Development:"
 	@echo "  make install                         Install the CLI"
 	@echo "  make dev-install                     Install in editable mode"
-	@echo "  make check                           Compile, validate and run tests"
-	@echo "  make doctor                          Inspect local configuration"
+	@echo "  make check                           Validate committed files, compile and run tests"
+	@echo "  make doctor                          Inspect .env, token and configuration availability"
+	@echo "  make clean                           Remove local Python/build artifacts"
 	@echo ""
 	@echo "Repository analysis and setup:"
 	@echo "  make discover TARGET=../project REPO=owner/repo"
@@ -44,33 +51,42 @@ help:
 	@echo "  make project-sync REPO=owner/repo PROJECT_NUMBER=1"
 
 install:
+	@echo "==> Installing project_setup"
 	$(PIP) install .
 
 dev-install:
+	@echo "==> Installing project_setup in editable mode"
 	$(PIP) install -e .
 
-compile:
-	$(PYTHON) -m compileall -q project_setup scripts tests
-
-test:
-	$(PYTHON) -m unittest discover -s tests -p "test_*.py" -v
-
 quality:
+	@echo "==> [1/3] Validating repository structure and committed files"
 	$(PYTHON) scripts/validation/repo_quality.py
 
-check: compile quality test
+compile:
+	@echo "==> [2/3] Compiling Python sources"
+	$(PYTHON) -m compileall -q project_setup scripts tests
+	@$(MAKE) --no-print-directory clean-generated
+	@echo "Python compilation passed. Generated cache files were removed."
+
+test:
+	@echo "==> [3/3] Running unit tests"
+	$(PYTHON) -B -m unittest discover -s tests -p "test_*.py" -v
+
+check: quality compile test
+	@echo "All repository checks passed. No GitHub API changes were made."
 
 doctor:
+	@echo "==> Inspecting local setup (read-only)"
 	$(PYTHON) -m project_setup doctor --config "$(CONFIG)"
 
 require-target:
-	@test -n "$(TARGET)" || (echo "TARGET is required, for example: make init TARGET=../my-project" >&2; exit 2)
+	@test -n "$(TARGET)" || (echo "ERROR: TARGET is required." >&2; echo "  Fix: use TARGET=../my-project" >&2; exit 2)
 
 require-repo:
-	@test -n "$(REPO)" || (echo "REPO is required, for example: REPO=owner/repository" >&2; exit 2)
+	@test -n "$(REPO)" || (echo "ERROR: REPO is required." >&2; echo "  Fix: use REPO=owner/repository" >&2; exit 2)
 
 require-project-number:
-	@test -n "$(PROJECT_NUMBER)" || (echo "PROJECT_NUMBER is required" >&2; exit 2)
+	@test -n "$(PROJECT_NUMBER)" || (echo "ERROR: PROJECT_NUMBER is required." >&2; echo "  Fix: use PROJECT_NUMBER=1" >&2; exit 2)
 
 discover: require-target require-repo
 	$(PYTHON) -m project_setup discover --repo "$(REPO)" --config "$(CONFIG)" --root "$(TARGET)" $(PROJECT_TYPE_FLAG) --auto
@@ -106,7 +122,9 @@ project-create: require-repo
 project-sync: require-repo require-project-number
 	cd "$(WORKDIR)" && $(PYTHON) -m project_setup project sync --repo "$(REPO)" --project-number "$(PROJECT_NUMBER)" $(OWNER_FLAG) --file config/project/project-definition.json --dry-run
 
-clean:
-	@find . -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
-	@find . -type f \( -name "*.pyc" -o -name "*.pyo" \) -delete 2>/dev/null || true
-	@rm -rf build dist *.egg-info .pytest_cache .mypy_cache
+clean-generated:
+	@$(PYTHON) -c "from pathlib import Path; import shutil; [shutil.rmtree(path, ignore_errors=True) for path in list(Path('.').rglob('__pycache__'))]; [path.unlink(missing_ok=True) for pattern in ('*.pyc','*.pyo') for path in list(Path('.').rglob(pattern))]"
+
+clean: clean-generated
+	@$(PYTHON) -c "from pathlib import Path; import shutil; [shutil.rmtree(Path(name), ignore_errors=True) for name in ('build','dist','.pytest_cache','.mypy_cache')]; [shutil.rmtree(path, ignore_errors=True) for path in list(Path('.').glob('*.egg-info'))]"
+	@echo "Local Python and build artifacts removed."
