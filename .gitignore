@@ -9,6 +9,7 @@ env/
 !.env.example
 build/
 dist/
+*.egg
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
