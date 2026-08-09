@@ -26,7 +26,7 @@ def load_project_definition(path: str) -> dict:
 
 
 def normalize_owner_type(value: str | None) -> str | None:
-    if value is None:
+    if value is None or not value.strip():
         return None
     normalized = OWNER_TYPE_ALIASES.get(value.strip().casefold())
     if not normalized:
@@ -35,7 +35,8 @@ def normalize_owner_type(value: str | None) -> str | None:
 
 
 def configured_owner_type(value: str | None = None) -> str | None:
-    return normalize_owner_type(value or os.getenv("PROJECT_SETUP_OWNER_TYPE"))
+    raw_value = value if value is not None else os.getenv("PROJECT_SETUP_OWNER_TYPE")
+    return normalize_owner_type(raw_value)
 
 
 def resolve_owner_type(client: GitHubClient, owner: str, owner_type: str | None = None) -> str:
