@@ -39,6 +39,7 @@ Inspect, when available:
 - current Git branch, status, and uncommitted changes;
 - existing language/framework/build files;
 - existing labels, milestones, issues, and Project v2 configuration when API access is available;
+- whether a Project v2 owner is a personal GitHub user or GitHub Organization;
 - existing naming, branching, release, testing, and governance conventions.
 
 Prefer recorded repository facts over asking the user to repeat information.
@@ -70,13 +71,20 @@ The normal persistent configuration is:
 ```dotenv
 PROJECT_SETUP_TARGET=../my-project
 GITHUB_REPOSITORY=owner/repository
+PROJECT_SETUP_OWNER_TYPE=user
 PROJECT_SETUP_CONFIG=project_setup.json
 PROJECT_SETUP_PROJECT_NUMBER=
 ```
 
+For `PROJECT_SETUP_OWNER_TYPE`, use:
+
+- `user` for a personal GitHub account;
+- `organization` for a company/team represented by a GitHub Organization;
+- empty only when authenticated auto-detection is intentionally preferred.
+
 Use `PROJECT_SETUP_TARGET=.` when the tool is already embedded in the target repository.
 
-`TARGET=...`, `REPO=...`, `CONFIG=...`, and `PROJECT_NUMBER=...` may be used as one-command overrides when necessary.
+`TARGET=...`, `REPO=...`, `CONFIG=...`, `PROJECT_NUMBER=...`, and `OWNER_TYPE=...` may be used as one-command overrides when necessary.
 
 Do **not** recommend storing `LIVE=1` or `FORCE=1` in `.env`. Live mutation and overwrite decisions must remain explicit per invocation.
 
@@ -104,6 +112,7 @@ Pause and request explicit user confirmation when any of the following occurs:
 - the user must create or modify credentials/secrets;
 - issue generation may overlap with existing issues/tasks;
 - an existing Project v2 may make project creation unnecessary;
+- the Project v2 owner type cannot be safely inferred and no explicit `PROJECT_SETUP_OWNER_TYPE` is recorded;
 - a dry-run reports unexpected deletes, replacements, duplicates, or broad changes;
 - any command would use `LIVE=1`;
 - the intended operation cannot be verified safely.
@@ -134,6 +143,20 @@ PROJECT_SETUP_TARGET=...
 GITHUB_REPOSITORY=owner/repository
 ```
 
+For repositories that use GitHub Projects v2, resolve the owner type before Project operations:
+
+```dotenv
+PROJECT_SETUP_OWNER_TYPE=user
+```
+
+or:
+
+```dotenv
+PROJECT_SETUP_OWNER_TYPE=organization
+```
+
+If the owner can be verified from GitHub metadata, do not ask the user unnecessarily. Record the correct value when persistent predictability is desired. If the variable is intentionally left empty, explain that authenticated Project v2 operations will auto-detect the owner type before GraphQL lookup.
+
 Optional:
 
 ```dotenv
@@ -150,7 +173,7 @@ make help
 make doctor
 ```
 
-Confirm that the resolved target and repository are the intended ones before proceeding.
+Confirm that the resolved target, repository, and Project owner type are the intended ones before proceeding.
 
 ### Phase 2 — Validate the tool and local state
 
@@ -191,7 +214,7 @@ Before proposing configuration changes, compare discovery with recorded reposito
 - issue/story/task conventions;
 - PR sections and validation rules;
 - existing automation workflows;
-- existing Project v2 boards and fields.
+- existing Project v2 boards, owner type, and fields.
 
 If a pattern already exists, prefer adapting `project_setup` to it rather than replacing it.
 
@@ -256,7 +279,14 @@ Do not run live issue generation repeatedly just to “make sure it worked.” V
 
 #### Projects v2
 
-Before `project-create`, check whether the intended Project already exists when possible.
+Before `project-create`, determine the Project owner namespace:
+
+- personal account → `PROJECT_SETUP_OWNER_TYPE=user`;
+- GitHub Organization/company → `PROJECT_SETUP_OWNER_TYPE=organization`.
+
+If the value is missing but API access is available, inspect GitHub owner metadata first. Never query both `user(...)` and `organization(...)` GraphQL namespaces for one login merely to discover which one works; the implementation intentionally resolves the owner type before the Project query.
+
+Then check whether the intended Project already exists when possible.
 
 If it exists:
 
@@ -290,6 +320,7 @@ Summarize the plan in terms of user-visible effects:
 - what would be created;
 - what would be updated;
 - what would be skipped/unchanged;
+- the resolved Project owner type when Project v2 is involved;
 - anything ambiguous or conflicting;
 - anything that cannot currently be verified.
 
@@ -303,6 +334,7 @@ Immediately before any live command, verify again:
 
 - resolved `PROJECT_SETUP_TARGET`;
 - resolved `GITHUB_REPOSITORY`;
+- resolved `PROJECT_SETUP_OWNER_TYPE` when Project v2 is involved;
 - active configuration file;
 - Project number when relevant;
 - current Git status/diff when local files are involved;
@@ -339,7 +371,7 @@ Depending on the module, verify:
 - labels/milestones now match the manifests;
 - expected issues/tasks exist exactly once;
 - sub-issue links are correct;
-- the expected Project v2 exists and has the intended number/fields/items;
+- the expected Project v2 exists under the intended user/organization owner and has the intended number/fields/items;
 - local installed files are present;
 - no unrelated files were modified.
 
@@ -371,6 +403,12 @@ I found an existing PR template with two project-specific sections that the gene
 Before I continue, please confirm that the existing PR template is authoritative for this repository.
 ```
 
+Good Project owner example:
+
+```text
+The repository owner is a GitHub Organization, so Project v2 should use PROJECT_SETUP_OWNER_TYPE=organization. I verified that setting in the resolved setup and can continue to the Project dry-run.
+```
+
 Good credential checkpoint:
 
 ```text
@@ -387,6 +425,8 @@ After the user replies that it is done, verify with `make doctor` before continu
 - Do not persist `LIVE=1` or `FORCE=1` in `.env`.
 - Do not use `FORCE=1` before inspecting the existing files and receiving confirmation.
 - Do not replace established repository conventions simply because generic defaults differ.
+- Do not guess the Project owner namespace when it can be verified.
+- Do not query both GraphQL owner namespaces for one login as a discovery mechanism.
 - Do not create duplicate Projects when an intended Project already exists.
 - Do not repeat live issue generation without checking for existing generated issues.
 - Do not assume a manual user change occurred; verify it.
@@ -399,6 +439,8 @@ Use these files for deeper implementation details only when needed:
 
 - `README.md` — concise user-facing overview and commands;
 - `README.pt-BR.md` — Portuguese user-facing version;
+- `docs/repo/project-owner-type.md` — Project v2 user/organization owner selection and auto-detection;
+- `docs/repo/project-owner-type.pt-BR.md` — Portuguese Project v2 owner-selection guide;
 - `docs/repo/project-setup-runbook.pt-BR.md` — detailed human operational runbook;
 - `docs/repo/project-setup-shared-tool.md` — package/distribution and authentication boundaries;
 - `docs/DOCUMENTATION-GUIDE.md` — authoritative documentation map.
