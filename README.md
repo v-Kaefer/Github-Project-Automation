@@ -5,11 +5,13 @@
 
 # GitHub Project Setup
 
-[Português (Brasil)](README.pt-BR.md) · [Quick start](#2-quick-start) · [Documentation](#6-documentation)
+[Português (Brasil)](README.pt-BR.md) · [AI-assisted setup](AI_SETUP_GUIDE.md) · [Quick start](#2-quick-start) · [Documentation](#6-documentation)
 
 `project_setup` is a self-contained toolkit for installing and operating reusable GitHub repository automation. It combines a Makefile, a Python CLI, GitHub Actions workflows, manifests, and validation scripts so repositories can be configured manually, through automation, or with AI assistance without hiding what will be changed.
 
 The project focuses on safe setup of labels, milestones, issues, sub-issues, pull-request guardrails, repository discovery, and GitHub Projects v2. Remote mutating commands default to dry-run and require an explicit live mode before writing to GitHub.
+
+If an AI assistant will perform or guide the setup, give it [`AI_SETUP_GUIDE.md`](AI_SETUP_GUIDE.md). That file tells the agent to inspect existing repository conventions before asking questions, pause at manual/credential/live checkpoints, re-verify user changes before continuing, and avoid duplicate resources.
 
 ## 1. Overview
 
@@ -217,7 +219,7 @@ The tool is intentionally conservative because repository setup mixes local file
 
 - **Dry-run first:** every remote mutating CLI command previews by default. A live write requires `--live` or `LIVE=1`.
 - **Persistent location, explicit mutation:** target/repository identity may live in `.env`, but `LIVE=1` and `FORCE=1` are deliberately not persistent defaults.
-- **Preserve target files:** the installer skips existing files unless overwrite is explicitly requested. Existing Makefiles and environment templates should be reviewed and merged rather than blindly replaced.
+- **Preserve target files:** the installer skips existing files unless overwrite is explicitly requested. Existing Makefiles, environment templates, and AI instructions should be reviewed and merged rather than blindly replaced.
 - **No filesystem side effect during install preview:** `init --dry-run` does not create the target directory.
 - **Explicit Project v2 boundary:** live Project v2 operations require `PROJECT_SETUP_PAT`; they do not silently fall back to `github.token`.
 - **No credential logging:** diagnostics show credential source/status, never token values.
@@ -232,6 +234,7 @@ Current intentional limits: generated issues are not idempotent yet, Project v2 
 
 | Document | What it contains |
 | --- | --- |
+| [AI setup guide](AI_SETUP_GUIDE.md) | Operational contract for AI assistants: inspect existing patterns first, ask only for unresolved decisions, pause for manual/credential/live checkpoints, re-verify user changes, and verify results after application. |
 | [Portuguese README](README.pt-BR.md) | Complete Portuguese version of this overview, quick start, authentication, commands, safety model, environment defaults, and licensing information. |
 | [Project Setup runbook (pt-BR)](docs/repo/project-setup-runbook.pt-BR.md) | Operational step-by-step procedure for configuring `.env`, diagnosing the environment, previewing, installing, and applying the tool in a target repository. |
 | [Shared tool internals](docs/repo/project-setup-shared-tool.md) | Distribution model, package/CLI boundaries, authentication boundary, request-safety decisions, and what the reusable core automates. |
