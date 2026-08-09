@@ -4,6 +4,7 @@ import os
 import unittest
 from unittest.mock import patch
 
+from project_setup.cli import build_parser
 from project_setup.project import find_project, normalize_owner_type, owner_node, resolve_owner_type
 
 
@@ -36,6 +37,9 @@ class FakeClient:
 
 class ProjectOwnerTypeTests(unittest.TestCase):
     def test_normalizes_documented_and_friendly_values(self) -> None:
+        self.assertIsNone(normalize_owner_type(None))
+        self.assertIsNone(normalize_owner_type(""))
+        self.assertIsNone(normalize_owner_type("   "))
         self.assertEqual(normalize_owner_type("user"), "user")
         self.assertEqual(normalize_owner_type("organization"), "organization")
         self.assertEqual(normalize_owner_type("org"), "organization")
@@ -84,6 +88,31 @@ class ProjectOwnerTypeTests(unittest.TestCase):
         with patch.dict(os.environ, {"PROJECT_SETUP_OWNER_TYPE": "user"}, clear=False):
             self.assertEqual(resolve_owner_type(client, "person"), "user")
         self.assertEqual(client.request_calls, [])
+
+    def test_cli_accepts_owner_type_for_project_create(self) -> None:
+        args = build_parser().parse_args(
+            ["project", "create", "--repo", "company/repository", "--owner-type", "organization"]
+        )
+        self.assertEqual(args.owner_type, "organization")
+
+    def test_cli_accepts_owner_type_for_project_sync(self) -> None:
+        args = build_parser().parse_args(
+            [
+                "project",
+                "sync",
+                "--repo",
+                "person/repository",
+                "--project-number",
+                "3",
+                "--owner-type",
+                "user",
+            ]
+        )
+        self.assertEqual(args.owner_type, "user")
+
+    def test_cli_accepts_owner_type_for_apply(self) -> None:
+        args = build_parser().parse_args(["apply", "--owner-type", "organization"])
+        self.assertEqual(args.owner_type, "organization")
 
 
 if __name__ == "__main__":
