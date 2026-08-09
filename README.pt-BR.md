@@ -5,11 +5,13 @@
 
 # GitHub Project Setup
 
-[English](README.md) · [Início rápido](#2-início-rápido) · [Documentação](#6-documentação)
+[English](README.md) · [Setup assistido por IA](AI_SETUP_GUIDE.md) · [Início rápido](#2-início-rápido) · [Documentação](#6-documentação)
 
 O `project_setup` é uma ferramenta autocontida para instalar e operar automações reutilizáveis em repositórios GitHub. Ela combina Makefile, CLI Python, workflows do GitHub Actions, manifests e scripts de validação para que repositórios possam ser configurados manualmente, por automação ou com auxílio de IA sem esconder o que será alterado.
 
 O foco é configurar com segurança labels, milestones, issues, sub-issues, guardrails de pull request, descoberta de repositório e GitHub Projects v2. Comandos remotos mutáveis usam dry-run por padrão e exigem modo live explícito antes de escrever no GitHub.
+
+Se uma IA for realizar ou conduzir o setup, forneça a ela o arquivo [`AI_SETUP_GUIDE.md`](AI_SETUP_GUIDE.md). Esse guia orienta o agente a inspecionar padrões existentes antes de perguntar, parar em checkpoints manuais/de credenciais/live, verificar novamente alterações feitas pelo usuário e evitar criação duplicada de recursos.
 
 ## 1. Visão geral
 
@@ -217,7 +219,7 @@ A ferramenta é deliberadamente conservadora porque o setup mistura arquivos loc
 
 - **Dry-run primeiro:** todo comando remoto mutável simula por padrão. Escrita real exige `--live` ou `LIVE=1`.
 - **Localização persistente, mutação explícita:** identidade do alvo/repositório pode ficar no `.env`, mas `LIVE=1` e `FORCE=1` não são defaults persistentes.
-- **Preservação dos arquivos do alvo:** o instalador ignora arquivos existentes salvo quando a sobrescrita é pedida explicitamente. Makefiles e templates de ambiente existentes devem ser revisados e mesclados, não substituídos cegamente.
+- **Preservação dos arquivos do alvo:** o instalador ignora arquivos existentes salvo quando a sobrescrita é pedida explicitamente. Makefiles, templates de ambiente e instruções para IA existentes devem ser revisados e mesclados, não substituídos cegamente.
 - **Preview de instalação sem efeito colateral:** `init --dry-run` não cria o diretório-alvo.
 - **Fronteira explícita de Project v2:** operações reais exigem `PROJECT_SETUP_PAT`; não existe fallback silencioso para `github.token`.
 - **Sem log de credenciais:** os diagnósticos mostram origem/estado, nunca o valor dos tokens.
@@ -232,6 +234,7 @@ Limitações intencionais atuais: geração de issues ainda não é idempotente,
 
 | Documento | O que contém |
 | --- | --- |
+| [Guia de setup para IA](AI_SETUP_GUIDE.md) | Contrato operacional para agentes de IA: consultar padrões existentes primeiro, perguntar apenas decisões pendentes, parar em checkpoints manuais/de credenciais/live, verificar novamente mudanças do usuário e validar resultados após a aplicação. |
 | [README em inglês](README.md) | Versão principal internacional com visão geral, quick start, autenticação, comandos, segurança, defaults de ambiente e licença. |
 | [Runbook do Project Setup](docs/repo/project-setup-runbook.pt-BR.md) | Procedimento operacional passo a passo para configurar `.env`, diagnosticar, simular, instalar e aplicar a ferramenta em outro repositório. |
 | [Internos da ferramenta compartilhada](docs/repo/project-setup-shared-tool.md) | Modelo de distribuição, limites do pacote/CLI, fronteira de autenticação, decisões de segurança HTTP e escopo do core reutilizável. |
