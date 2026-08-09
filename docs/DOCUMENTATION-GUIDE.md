@@ -12,6 +12,17 @@ This guide maps the reusable configuration, workflows and operational documentat
 | `config/project/project-definition.json` | Project v2 fields and options | `docs/repo/project-board-policy.md` |
 | `config/stories/backlog-manifest.json` | Phases, stories and tasks | milestone and story documentation in the target repository |
 
+## Operational guidance hierarchy
+
+| Source | Authority |
+| --- | --- |
+| Target repository instructions and recorded conventions (`AGENTS.md`, `CONTRIBUTING*`, README/docs, existing workflows/configuration) | Authoritative for repository-specific decisions and established project standards. |
+| `AI_SETUP_GUIDE.md` | Authoritative for the AI interaction sequence: inspect before asking, pause at checkpoints, re-verify user changes, protect credentials, and verify applied results. |
+| `docs/repo/project-setup-runbook.pt-BR.md` | Detailed human operational procedure and troubleshooting path. |
+| `README.md` / `README.pt-BR.md` | Concise user-facing overview, setup, authentication, commands, and safety model. |
+
+The AI guide does not override project-specific conventions. Its purpose is to make an assistant discover and respect those conventions before proposing or applying generic defaults.
+
 ## Workflows and sources
 
 | Workflow | Purpose | Source of behavior |
@@ -43,6 +54,7 @@ python -m project_setup apply --repo owner/repository --live
 ## Repository structure
 
 ```text
+AI_SETUP_GUIDE.md                    Interaction contract for AI-guided configuration
 project_setup/                       Reusable Python package
 project_setup.json                   File paths and execution defaults
 config/project/                      Labels, milestones and Project v2 definition
@@ -54,4 +66,4 @@ tests/                               Unit and installation tests
 Makefile                             Human and AI-oriented command interface
 ```
 
-When a configuration contract changes, update its loader, tests, README and relevant runbook in the same pull request.
+When a configuration contract changes, update its loader, tests, README, AI guide when relevant, and the corresponding runbook in the same pull request.
