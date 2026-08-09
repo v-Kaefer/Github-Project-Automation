@@ -1,0 +1,72 @@
+name: Q.A manual issue generation
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type RUN_NON_IDEMPOTENT_TEST to create and close Q.A issues in the sandbox"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qa-manual-issue-generation-${{ vars.QA_REPOSITORY || 'unconfigured' }}
+  cancel-in-progress: false
+
+jobs:
+  issue-generation:
+    name: manual-non-idempotent-issue-generation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: qa
+    steps:
+      - name: Require explicit confirmation
+        shell: bash
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          if [ "$CONFIRMATION" != "RUN_NON_IDEMPOTENT_TEST" ]; then
+            echo "::error title=Confirmation required::This test is intentionally manual because generated issues cannot be deleted and remain in sandbox history."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: Install package
+        run: python -m pip install .
+
+      - name: Validate Q.A environment configuration
+        shell: bash
+        env:
+          QA_REPOSITORY: ${{ vars.QA_REPOSITORY }}
+          QA_PROJECT_SETUP_PAT: ${{ secrets.QA_PROJECT_SETUP_PAT }}
+        run: |
+          set -euo pipefail
+          if [ -z "${QA_REPOSITORY:-}" ] || [ -z "${QA_PROJECT_SETUP_PAT:-}" ]; then
+            echo "::error title=Q.A environment incomplete::Set QA_REPOSITORY and QA_PROJECT_SETUP_PAT in GitHub Environment 'qa'."
+            exit 1
+          fi
+          if [ "$QA_REPOSITORY" = "$GITHUB_REPOSITORY" ]; then
+            echo "::error title=Unsafe Q.A target::Use a dedicated sandbox repository."
+            exit 1
+          fi
+
+      - name: Generate, verify, and close Q.A issues
+        env:
+          QA_REPOSITORY: ${{ vars.QA_REPOSITORY }}
+          PROJECT_SETUP_PAT: ${{ secrets.QA_PROJECT_SETUP_PAT }}
+        run: >-
+          python tests/qa/live_issue_generation.py
+          --repo "$QA_REPOSITORY"
+          --run-id "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
