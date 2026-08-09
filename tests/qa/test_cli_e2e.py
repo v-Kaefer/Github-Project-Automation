@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -9,6 +10,8 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[2]
+MAKE = shutil.which("make")
+GIT = shutil.which("git")
 
 
 def clean_environment() -> dict[str, str]:
@@ -30,6 +33,17 @@ def run_cli(*arguments: str, cwd: Path | None = None) -> subprocess.CompletedPro
     return subprocess.run(
         [sys.executable, "-m", "project_setup", *arguments],
         cwd=cwd or ROOT,
+        env=clean_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def run_command(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        command,
+        cwd=cwd,
         env=clean_environment(),
         capture_output=True,
         text=True,
@@ -85,7 +99,34 @@ class QaCliEndToEndTests(unittest.TestCase):
             self.assertTrue((target / "licenses" / "project_setup" / "LICENSE").is_file())
             self.assertTrue((target / "licenses" / "project_setup" / "NOTICE").is_file())
             self.assertTrue((target / ".github" / "workflows" / "project-setup.yml").is_file())
+            self.assertTrue((target / ".github" / "workflows" / "qa-source-branch.yml").is_file())
+            self.assertTrue((target / ".github" / "workflows" / "main-source-branch.yml").is_file())
             self.assertTrue((target / "config" / "project" / "labels.json").is_file())
+
+    @unittest.skipUnless(MAKE and GIT, "GNU Make and Git are required for embedded target validation")
+    def test_installed_target_runs_its_own_make_check(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            target = Path(temporary_directory) / "target"
+            install = run_cli(
+                "init",
+                "--source",
+                str(ROOT),
+                "--target",
+                str(target),
+                "--live",
+            )
+            self.assertEqual(install.returncode, 0, install.stderr)
+
+            git_init = run_command([GIT, "init"], target)
+            self.assertEqual(git_init.returncode, 0, git_init.stderr)
+            git_add = run_command([GIT, "add", "--all"], target)
+            self.assertEqual(git_add.returncode, 0, git_add.stderr)
+
+            result = run_command([MAKE, "--no-print-directory", "check"], target)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("repository_quality_mode=embedded-target", result.stdout)
+            self.assertIn("Embedded project_setup smoke test passed", result.stdout)
+            self.assertIn("All repository checks passed (embedded-target)", result.stdout)
 
     def test_embedded_commands_remain_dry_run_without_credentials(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
