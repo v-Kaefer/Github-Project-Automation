@@ -84,6 +84,57 @@ def require_sandbox(repo: str) -> None:
         )
 
 
+def cleanup_resources(
+    client: GitHubClient,
+    repo: str,
+    owner: str,
+    *,
+    label_name: str,
+    milestone_title: str,
+    project_title: str,
+    project_id: str | None,
+    milestone_number: int | None,
+) -> list[str]:
+    errors: list[str] = []
+
+    try:
+        cleanup_project_id = project_id
+        if not cleanup_project_id:
+            project = project_by_title(client, owner, project_title)
+            cleanup_project_id = project["id"] if project else None
+        if cleanup_project_id:
+            delete_project(client, cleanup_project_id)
+            if project_by_title(client, owner, project_title):
+                raise RuntimeError("Project still exists after deleteProjectV2")
+            print("cleanup_project=passed")
+    except Exception as exc:
+        errors.append(f"project: {exc}")
+
+    try:
+        cleanup_milestone_number = milestone_number
+        if cleanup_milestone_number is None:
+            matches = find_milestone(client, repo, milestone_title)
+            cleanup_milestone_number = int(matches[0]["number"]) if matches else None
+        if cleanup_milestone_number is not None:
+            delete_milestone(client, repo, cleanup_milestone_number)
+            if find_milestone(client, repo, milestone_title):
+                raise RuntimeError("Milestone still exists after deletion")
+            print("cleanup_milestone=passed")
+    except Exception as exc:
+        errors.append(f"milestone: {exc}")
+
+    try:
+        if find_label(client, repo, label_name):
+            delete_label(client, repo, label_name)
+        if find_label(client, repo, label_name):
+            raise RuntimeError("Label still exists after deletion")
+        print("cleanup_label=passed")
+    except Exception as exc:
+        errors.append(f"label: {exc}")
+
+    return errors
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run live, self-cleaning Q.A tests against a dedicated GitHub sandbox")
     parser.add_argument("--repo", required=True)
@@ -100,6 +151,7 @@ def main() -> int:
     project_title = f"QA validation {suffix}"
     created_project_id: str | None = None
     created_milestone_number: int | None = None
+    primary_error: Exception | None = None
 
     print(f"sandbox_repository={args.repo}")
     print(f"qa_run_id={suffix}")
@@ -192,31 +244,29 @@ def main() -> int:
             if len(qa_text) != 1 or len(qa_status) != 1:
                 raise RuntimeError("Project field idempotency verification failed")
             print("project_v2_idempotency=passed")
+    except Exception as exc:
+        primary_error = exc
 
-        print("qa_live_validation=passed")
-        return 0
-    finally:
-        cleanup_errors: list[str] = []
-        if created_project_id:
-            try:
-                delete_project(client, created_project_id)
-                print("cleanup_project=passed")
-            except Exception as exc:  # cleanup must continue for other resources
-                cleanup_errors.append(f"project: {exc}")
-        if created_milestone_number is not None:
-            try:
-                delete_milestone(client, args.repo, created_milestone_number)
-                print("cleanup_milestone=passed")
-            except Exception as exc:
-                cleanup_errors.append(f"milestone: {exc}")
-        if find_label(client, args.repo, label_name):
-            try:
-                delete_label(client, args.repo, label_name)
-                print("cleanup_label=passed")
-            except Exception as exc:
-                cleanup_errors.append(f"label: {exc}")
+    cleanup_errors = cleanup_resources(
+        client,
+        args.repo,
+        owner,
+        label_name=label_name,
+        milestone_title=milestone_title,
+        project_title=project_title,
+        project_id=created_project_id,
+        milestone_number=created_milestone_number,
+    )
+
+    if primary_error:
         if cleanup_errors:
-            raise RuntimeError("Q.A cleanup failed: " + "; ".join(cleanup_errors))
+            print("warning: cleanup also failed: " + "; ".join(cleanup_errors))
+        raise primary_error
+    if cleanup_errors:
+        raise RuntimeError("Q.A cleanup failed: " + "; ".join(cleanup_errors))
+
+    print("qa_live_validation=passed")
+    return 0
 
 
 if __name__ == "__main__":
