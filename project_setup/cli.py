@@ -24,7 +24,13 @@ from .issue_milestones import sync_issue_milestones
 from .issues import generate_issues
 from .labels import sync_labels
 from .milestones import sync_milestones
-from .project import create_project, load_project_definition, sync_project
+from .project import (
+    OWNER_TYPES,
+    configured_owner_type,
+    create_project,
+    load_project_definition,
+    sync_project,
+)
 from .pr_validation import upsert_validation_comment, validate_pull_request
 from .runner import load_project_setup_config, run_project_setup
 
@@ -62,6 +68,13 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     github_token, token_source = get_token_source()
     gh_status = get_gh_auth_status()
     failures = 0
+    owner_type_error: str | None = None
+    try:
+        project_owner_type = configured_owner_type()
+    except ValueError as exc:
+        project_owner_type = None
+        owner_type_error = str(exc)
+        failures += 1
 
     print("==> Environment")
     print("python_module=project_setup")
@@ -70,12 +83,16 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     print(f"working_directory={Path.cwd()}")
     print(f"env_file={environment_path or (Path.cwd() / '.env')} exists={'yes' if environment_path else 'no'}")
     print(f"github_repository={os.getenv('GITHUB_REPOSITORY') or 'missing'}")
+    print(f"project_owner_type={project_owner_type or 'auto-detect'}")
     print(f"github_token={'configured' if github_token else 'missing'} source={token_source}")
     print(f"project_setup_pat={'configured' if project_pat else 'missing'}")
     print(f"gh_cli={'installed' if gh_status.installed else 'missing'}")
     print(f"gh_auth={'valid' if gh_status.authenticated else 'invalid' if gh_status.installed else 'not-installed'}")
     print(f"gh_auth_detail={gh_status.detail}")
 
+    if owner_type_error:
+        print(f"ERROR: invalid PROJECT_SETUP_OWNER_TYPE: {owner_type_error}")
+        print("  Fix: set PROJECT_SETUP_OWNER_TYPE=user or PROJECT_SETUP_OWNER_TYPE=organization, or leave it empty for auto-detection.")
     if os.name == "nt":
         print("INFO: Windows detected. The Makefile selects `python` by default and does not require Unix `test` commands.")
     if not environment_path:
@@ -152,7 +169,13 @@ def cmd_issues_generate(args: argparse.Namespace) -> int:
 
 def cmd_project_create(args: argparse.Namespace) -> int:
     client = GitHubClient("") if args.dry_run else require_project_client()
-    create_project(client, repo_arg(args.repo), args.file, args.dry_run)
+    create_project(
+        client,
+        repo_arg(args.repo),
+        args.file,
+        args.dry_run,
+        owner_type=args.owner_type,
+    )
     return 0
 
 
@@ -161,8 +184,10 @@ def cmd_project_sync(args: argparse.Namespace) -> int:
     if args.dry_run and not get_project_pat():
         definition = load_project_definition(args.file)
         target_owner = args.owner or repository.split("/", 1)[0]
+        owner_type = configured_owner_type(args.owner_type)
         print("[DRY-RUN] Offline Project v2 preview; PROJECT_SETUP_PAT is not configured.")
         print(f"- owner: {target_owner}")
+        print(f"- owner type: {owner_type or 'auto-detect during authenticated execution'}")
         print(f"- project number: {args.project_number}")
         print(f"- repository: {repository}")
         print(f"- issue state: {args.issue_state}")
@@ -179,6 +204,7 @@ def cmd_project_sync(args: argparse.Namespace) -> int:
         owner=args.owner,
         issue_state=args.issue_state,
         dry_run=args.dry_run,
+        owner_type=args.owner_type,
     )
     return 0
 
@@ -226,6 +252,7 @@ def cmd_apply(args: argparse.Namespace) -> int:
         "run_project_creation": args.run_project_creation if args.run_project_creation is not None else defaults.get("runProjectCreation", False),
         "run_issue_generation": args.run_issue_generation if args.run_issue_generation is not None else defaults.get("runIssueGeneration", False),
         "link_subissues": args.link_subissues if args.link_subissues is not None else defaults.get("linkSubissues", False),
+        "owner_type": args.owner_type,
     }
     if values["dry_run"]:
         client = GitHubClient("")
@@ -256,9 +283,19 @@ def add_execution_mode(parser: argparse.ArgumentParser, *, default_dry_run: bool
     parser.set_defaults(dry_run=default_dry_run)
 
 
+def add_owner_type_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--owner-type",
+        choices=OWNER_TYPES,
+        default=None,
+        help="Project v2 owner namespace: user or organization; defaults to PROJECT_SETUP_OWNER_TYPE or auto-detection",
+    )
+
+
 def add_apply_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--repo", default=os.getenv("GITHUB_REPOSITORY"))
     parser.add_argument("--config", default=os.getenv("PROJECT_SETUP_CONFIG", "project_setup.json"))
+    add_owner_type_argument(parser)
     add_execution_mode(parser)
     add_bool_pair(parser, "run-labels", "run_labels", "Synchronize labels")
     add_bool_pair(parser, "run-milestones", "run_milestones", "Synchronize milestones")
@@ -326,6 +363,7 @@ def build_parser() -> argparse.ArgumentParser:
     project_create = project_sub.add_parser("create")
     project_create.add_argument("--repo")
     project_create.add_argument("--file", default="config/project/project-definition.json")
+    add_owner_type_argument(project_create)
     add_execution_mode(project_create)
     project_create.set_defaults(func=cmd_project_create)
     project_sync = project_sub.add_parser("sync")
@@ -334,6 +372,7 @@ def build_parser() -> argparse.ArgumentParser:
     project_sync.add_argument("--file", default="config/project/project-definition.json")
     project_sync.add_argument("--project-number", type=int, required=True)
     project_sync.add_argument("--issue-state", choices=("open", "closed", "all"), default="open")
+    add_owner_type_argument(project_sync)
     add_execution_mode(project_sync)
     project_sync.set_defaults(func=cmd_project_sync)
 
