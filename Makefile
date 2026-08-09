@@ -9,18 +9,28 @@ endif
 PIP ?= $(PYTHON) -m pip
 
 # Resolve persistent defaults through the same Python .env loader used by the CLI.
-# Command-line Make variables still take precedence for one-off overrides.
+# Only Make command-line variables override these values; unrelated process-level
+# variables such as TARGET or REPO are intentionally ignored to avoid collisions.
 ENV_TARGET := $(shell $(PYTHON) -c "from project_setup.github import load_env_file; import os; load_env_file(); print(os.getenv('PROJECT_SETUP_TARGET', ''))")
 ENV_REPO := $(shell $(PYTHON) -c "from project_setup.github import load_env_file; import os; load_env_file(); print(os.getenv('GITHUB_REPOSITORY', ''))")
 ENV_CONFIG := $(shell $(PYTHON) -c "from project_setup.github import load_env_file; import os; load_env_file(); print(os.getenv('PROJECT_SETUP_CONFIG', ''))")
 ENV_PROJECT_NUMBER := $(shell $(PYTHON) -c "from project_setup.github import load_env_file; import os; load_env_file(); print(os.getenv('PROJECT_SETUP_PROJECT_NUMBER', ''))")
 
-TARGET ?= $(ENV_TARGET)
-REPO ?= $(ENV_REPO)
+ifneq ($(origin TARGET),command line)
+TARGET := $(ENV_TARGET)
+endif
+ifneq ($(origin REPO),command line)
+REPO := $(ENV_REPO)
+endif
+ifneq ($(origin CONFIG),command line)
+CONFIG := $(if $(strip $(ENV_CONFIG)),$(ENV_CONFIG),project_setup.json)
+endif
+ifneq ($(origin PROJECT_NUMBER),command line)
+PROJECT_NUMBER := $(ENV_PROJECT_NUMBER)
+endif
+
 PROFILE ?= core
 PROJECT_TYPE ?=
-CONFIG ?= $(if $(strip $(ENV_CONFIG)),$(ENV_CONFIG),project_setup.json)
-PROJECT_NUMBER ?= $(ENV_PROJECT_NUMBER)
 OWNER ?=
 FORCE ?= 0
 LIVE ?= 0
