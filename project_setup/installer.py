@@ -8,6 +8,7 @@ import shutil
 CORE_TEMPLATE_FILES = (
     ".env.example",
     "Makefile",
+    "AI_SETUP_GUIDE.md",
     ".github/ISSUE_TEMPLATE/bug-report.yml",
     ".github/ISSUE_TEMPLATE/task-sub-issue.yml",
     ".github/ISSUE_TEMPLATE/user-story.yml",
@@ -92,7 +93,7 @@ def install_repository(
         if destination.exists() and not force:
             skipped.append(destination_relative)
             print(f"skipped existing: {destination_relative}")
-            if destination_relative in {"Makefile", ".env.example"}:
+            if destination_relative in {"Makefile", ".env.example", "AI_SETUP_GUIDE.md"}:
                 print(
                     f"  Review the installed template manually before merging it into the existing {destination_relative}. "
                     "Use --force only after reviewing the differences."
