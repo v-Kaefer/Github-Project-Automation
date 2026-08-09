@@ -18,7 +18,7 @@ ou:
 PROJECT_SETUP_OWNER_TYPE=organization
 ```
 
-Os valores documentados são `user` e `organization`. A implementação também aceita `org` e `company` como aliases de `organization`.
+Os valores documentados são `user` e `organization`. A implementação também aceita `org` e `company` como aliases de `organization` ao resolver a configuração persistente.
 
 Essa configuração não é secreta. Ela informa à camada GraphQL em qual namespace do GitHub o Project v2 pertence. Ela não altera permissões do repositório e não substitui `PROJECT_SETUP_PAT`.
 
@@ -67,6 +67,58 @@ O Makefile exporta o valor resolvido como `PROJECT_SETUP_OWNER_TYPE`, garantindo
 
 `make help` mostra o valor resolvido. Quando ele estiver vazio, a saída informa `auto-detect`.
 
+## Comportamento na CLI
+
+A mesma seleção está disponível diretamente na CLI Python. A CLI expõe apenas os valores canônicos `user` e `organization`:
+
+```bash
+project-setup project create \
+  --repo Empresa-Exemplo/exemplo \
+  --owner-type organization \
+  --live
+```
+
+```bash
+project-setup project sync \
+  --repo v-Kaefer/exemplo \
+  --project-number 3 \
+  --owner-type user \
+  --dry-run
+```
+
+O setup completo também aceita a opção:
+
+```bash
+project-setup apply \
+  --repo Empresa-Exemplo/exemplo \
+  --owner-type organization \
+  --dry-run
+```
+
+`--owner-type` tem precedência naquela execução. Sem ele, a implementação usa `PROJECT_SETUP_OWNER_TYPE`; se a variável estiver vazia, operações autenticadas de Project v2 autodetectam o tipo do proprietário.
+
+## Diagnóstico
+
+`make help` mostra a seleção persistente/resolvida pelo Make. `make doctor` informa:
+
+```text
+project_owner_type=user
+```
+
+ou:
+
+```text
+project_owner_type=organization
+```
+
+Sem tipo configurado:
+
+```text
+project_owner_type=auto-detect
+```
+
+Um valor inválido configurado é tratado pelo `doctor` como erro bloqueante e vem acompanhado de instrução de correção.
+
 ## Autenticação
 
 Tipo do owner e autenticação são configurações separadas. Operações reais de Project v2 continuam exigindo:
@@ -91,5 +143,8 @@ A suíte de testes valida:
 - seleção explícita de `organization`;
 - detecção automática de User;
 - detecção automática de Organization;
+- configuração vazia usando autodetecção;
 - precedência da configuração do ambiente sobre a autodetecção;
+- seleção por CLI em `project create`, `project sync` e `apply`;
+- resolução do `.env` e override `OWNER_TYPE` no Makefile;
 - reutilização do tipo resolvido no sandbox live durante create, lookup, sync e cleanup.
