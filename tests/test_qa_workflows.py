@@ -15,11 +15,13 @@ class QaWorkflowContractTests(unittest.TestCase):
         text = self.read(".github/workflows/qa-source-branch.yml")
         self.assertIn('branches: ["Q.A"]', text)
         self.assertIn('HEAD_REF" != "develop', text)
+        self.assertIn("name: validate-qa-source", text)
 
     def test_main_source_requires_qa(self):
         text = self.read(".github/workflows/main-source-branch.yml")
         self.assertIn('HEAD_REF" != "Q.A', text)
         self.assertNotIn('HEAD_REF" != "develop', text)
+        self.assertIn("name: validate-main-source", text)
 
     def test_qa_validation_matrix_covers_supported_platforms_and_versions(self):
         text = self.read(".github/workflows/qa-validation.yml")
@@ -34,6 +36,8 @@ class QaWorkflowContractTests(unittest.TestCase):
             "tests/qa",
             "make doctor",
             "python -m build",
+            "name: qa-gate",
+            "needs: [repository-quality, compatibility, package-artifact]",
         ):
             with self.subTest(expected=expected):
                 self.assertIn(expected, text)
@@ -41,6 +45,7 @@ class QaWorkflowContractTests(unittest.TestCase):
     def test_live_workflow_uses_protected_environment_and_dedicated_credentials(self):
         text = self.read(".github/workflows/qa-live.yml")
         self.assertIn("environment: qa", text)
+        self.assertIn("name: qa-live-gate", text)
         self.assertIn("vars.QA_REPOSITORY", text)
         self.assertIn("secrets.QA_PROJECT_SETUP_PAT", text)
         self.assertIn("tests/qa/live_sandbox.py", text)
