@@ -1,0 +1,63 @@
+name: Q.A live sandbox
+
+on:
+  push:
+    branches: ["Q.A"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qa-live-${{ vars.QA_REPOSITORY || 'unconfigured' }}
+  cancel-in-progress: false
+
+jobs:
+  live-sandbox:
+    name: live-sandbox / labels-milestones-project-v2
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: qa
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: Install package
+        run: python -m pip install .
+
+      - name: Validate Q.A environment configuration
+        shell: bash
+        env:
+          QA_REPOSITORY: ${{ vars.QA_REPOSITORY }}
+          QA_PROJECT_SETUP_PAT: ${{ secrets.QA_PROJECT_SETUP_PAT }}
+        run: |
+          set -euo pipefail
+          if [ -z "${QA_REPOSITORY:-}" ]; then
+            echo "::error title=QA_REPOSITORY missing::Create GitHub Environment 'qa' and set variable QA_REPOSITORY to a dedicated sandbox repository."
+            exit 1
+          fi
+          if [ -z "${QA_PROJECT_SETUP_PAT:-}" ]; then
+            echo "::error title=QA_PROJECT_SETUP_PAT missing::Add a PAT with repo and project access to GitHub Environment 'qa' as QA_PROJECT_SETUP_PAT."
+            exit 1
+          fi
+          if [ "$QA_REPOSITORY" = "$GITHUB_REPOSITORY" ]; then
+            echo "::error title=Unsafe Q.A target::QA_REPOSITORY must not be the source repository. Use a dedicated disposable sandbox."
+            exit 1
+          fi
+          echo "Q.A sandbox configuration is present. Secret values were not printed."
+
+      - name: Run live self-cleaning integration test
+        env:
+          QA_REPOSITORY: ${{ vars.QA_REPOSITORY }}
+          PROJECT_SETUP_PAT: ${{ secrets.QA_PROJECT_SETUP_PAT }}
+        run: >-
+          python tests/qa/live_sandbox.py
+          --repo "$QA_REPOSITORY"
+          --run-id "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
