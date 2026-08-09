@@ -1,9 +1,20 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import urllib.parse
 
 from .github import API_BASE, GitHubClient, split_repo
+
+
+OWNER_TYPES = ("user", "organization")
+OWNER_TYPE_ALIASES = {
+    "user": "user",
+    "organization": "organization",
+    "org": "organization",
+    "company": "organization",
+}
 
 
 def load_project_definition(path: str) -> dict:
@@ -14,22 +25,60 @@ def load_project_definition(path: str) -> dict:
     return definition
 
 
-def owner_node(client: GitHubClient, owner: str) -> str:
-    user_query = "query($login:String!){user(login:$login){id}}"
-    user = client.graphql(user_query, {"login": owner}).get("user")
-    if user and user.get("id"):
-        return user["id"]
-    org_query = "query($login:String!){organization(login:$login){id}}"
-    organization = client.graphql(org_query, {"login": owner}).get("organization")
-    if organization and organization.get("id"):
-        return organization["id"]
-    raise RuntimeError(f"Owner not found: {owner}")
+def normalize_owner_type(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = OWNER_TYPE_ALIASES.get(value.strip().casefold())
+    if not normalized:
+        raise ValueError("Project owner type must be 'user' or 'organization'")
+    return normalized
 
 
-def create_project(client: GitHubClient, repo: str, definition_file: str, dry_run: bool = False) -> None:
+def configured_owner_type(value: str | None = None) -> str | None:
+    return normalize_owner_type(value or os.getenv("PROJECT_SETUP_OWNER_TYPE"))
+
+
+def resolve_owner_type(client: GitHubClient, owner: str, owner_type: str | None = None) -> str:
+    configured = configured_owner_type(owner_type)
+    if configured:
+        return configured
+
+    encoded_owner = urllib.parse.quote(owner, safe="")
+    profile = client.request_json("GET", f"{API_BASE}/users/{encoded_owner}")
+    github_type = str(profile.get("type", "")).casefold()
+    if github_type == "user":
+        return "user"
+    if github_type == "organization":
+        return "organization"
+    raise RuntimeError(
+        f"Could not determine whether GitHub owner '{owner}' is a user or organization. "
+        "Set PROJECT_SETUP_OWNER_TYPE=user or PROJECT_SETUP_OWNER_TYPE=organization."
+    )
+
+
+def owner_node(client: GitHubClient, owner: str, owner_type: str | None = None) -> str:
+    resolved_type = resolve_owner_type(client, owner, owner_type)
+    query = f"query($login:String!){{{resolved_type}(login:$login){{id}}}}"
+    node = client.graphql(query, {"login": owner}).get(resolved_type)
+    if node and node.get("id"):
+        return node["id"]
+    raise RuntimeError(f"GitHub {resolved_type} owner not found: {owner}")
+
+
+def create_project(
+    client: GitHubClient,
+    repo: str,
+    definition_file: str,
+    dry_run: bool = False,
+    owner_type: str | None = None,
+) -> None:
     definition = load_project_definition(definition_file)
+    owner = split_repo(repo)[0]
+    configured_type = configured_owner_type(owner_type)
     if dry_run:
         print(f"[DRY-RUN] Would create Project v2: {definition['name']}")
+        print(f"- owner: {owner}")
+        print(f"- owner type: {configured_type or 'auto-detect during authenticated execution'}")
         for field in definition.get("fields", []):
             print(f"- field: {field['name']} ({field['type']})")
         return
@@ -40,24 +89,28 @@ def create_project(client: GitHubClient, repo: str, definition_file: str, dry_ru
     """
     project = client.graphql(
         mutation,
-        {"owner": owner_node(client, split_repo(repo)[0]), "title": definition["name"]},
+        {"owner": owner_node(client, owner, configured_type), "title": definition["name"]},
     )["createProjectV2"]["projectV2"]
     print(json.dumps(project, ensure_ascii=False))
 
 
-def find_project(client: GitHubClient, owner: str, project_number: int) -> dict:
-    query = """
-    query($login:String!, $number:Int!) {
-      user(login:$login) { projectV2(number:$number) { id title url } }
-      organization(login:$login) { projectV2(number:$number) { id title url } }
-    }
+def find_project(
+    client: GitHubClient,
+    owner: str,
+    project_number: int,
+    owner_type: str | None = None,
+) -> dict:
+    resolved_type = resolve_owner_type(client, owner, owner_type)
+    query = f"""
+    query($login:String!, $number:Int!) {{
+      {resolved_type}(login:$login) {{ projectV2(number:$number) {{ id title url }} }}
+    }}
     """
     data = client.graphql(query, {"login": owner, "number": project_number})
-    for owner_type in ("user", "organization"):
-        node = data.get(owner_type)
-        if node and node.get("projectV2"):
-            return node["projectV2"]
-    raise RuntimeError(f"Project v2 #{project_number} not found for '{owner}'")
+    node = data.get(resolved_type)
+    if node and node.get("projectV2"):
+        return node["projectV2"]
+    raise RuntimeError(f"Project v2 #{project_number} not found for {resolved_type} '{owner}'")
 
 
 def list_project_fields(client: GitHubClient, project_id: str) -> list[dict]:
@@ -271,9 +324,11 @@ def sync_project(
     owner: str | None = None,
     issue_state: str = "open",
     dry_run: bool = False,
+    owner_type: str | None = None,
 ) -> None:
     definition = load_project_definition(definition_file)
-    project = find_project(client, owner or split_repo(repo)[0], project_number)
+    target_owner = owner or split_repo(repo)[0]
+    project = find_project(client, target_owner, project_number, owner_type=owner_type)
     print(f"Project found: {project['title']} ({project['url']})")
     fields = ensure_fields(client, project["id"], definition, dry_run=dry_run)
     current_items = list_project_items(client, project["id"])
