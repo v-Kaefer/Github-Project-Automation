@@ -128,3 +128,28 @@ jobs:
           .qa-venv/bin/python -m project_setup --help
           .qa-venv/bin/project-setup --help
           .qa-venv/bin/project_setup --help
+
+  qa-gate:
+    name: qa-gate
+    if: always()
+    needs: [repository-quality, compatibility, package-artifact]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all deterministic Q.A jobs to pass
+        shell: bash
+        env:
+          REPOSITORY_QUALITY_RESULT: ${{ needs.repository-quality.result }}
+          COMPATIBILITY_RESULT: ${{ needs.compatibility.result }}
+          PACKAGE_ARTIFACT_RESULT: ${{ needs.package-artifact.result }}
+        run: |
+          set -euo pipefail
+          echo "repository-quality=$REPOSITORY_QUALITY_RESULT"
+          echo "compatibility=$COMPATIBILITY_RESULT"
+          echo "package-artifact=$PACKAGE_ARTIFACT_RESULT"
+          if [ "$REPOSITORY_QUALITY_RESULT" != "success" ] || \
+             [ "$COMPATIBILITY_RESULT" != "success" ] || \
+             [ "$PACKAGE_ARTIFACT_RESULT" != "success" ]; then
+            echo "Q.A deterministic gate failed." >&2
+            exit 1
+          fi
+          echo "Q.A deterministic gate passed."
