@@ -28,10 +28,20 @@ REQUIRED_PATHS = (
     ".github/workflows/auto-label.yml",
     ".github/workflows/pr-metadata.yml",
     ".github/workflows/repo-quality.yml",
+    ".github/workflows/qa-source-branch.yml",
+    ".github/workflows/qa-validation.yml",
+    ".github/workflows/qa-live.yml",
+    ".github/workflows/qa-issue-generation.yml",
+    "docs/repo/qa-policy.md",
+    "docs/repo/qa-policy.pt-BR.md",
     "scripts/validation/repo_quality.py",
     "scripts/validation/validate_pr_body.py",
     "tests/test_project_setup.py",
     "tests/test_script_references.py",
+    "tests/test_branch_promotion.py",
+    "tests/qa/test_cli_e2e.py",
+    "tests/qa/live_sandbox.py",
+    "tests/qa/live_issue_generation.py",
 )
 
 # Build legacy names at runtime so this validation file does not contain the exact
