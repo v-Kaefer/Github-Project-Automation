@@ -8,12 +8,16 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: main-source-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   validate-main-source:
     name: validate-main-source
     runs-on: ubuntu-latest
     steps:
-      - name: Ensure PR to main comes from develop
+      - name: Ensure PR to main comes from develop or hotfix
         shell: bash
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
@@ -21,13 +25,18 @@ jobs:
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           EXPECTED_REPO: ${{ github.repository }}
         run: |
+          set -euo pipefail
           echo "Base: $BASE_REF"
           echo "Head: $HEAD_REPO:$HEAD_REF"
           if [[ "$BASE_REF" != "main" ]]; then
-            echo "This workflow only validates PRs targeting main."
+            echo "This workflow only validates PRs targeting main." >&2
             exit 1
           fi
-          if [[ "$HEAD_REPO" != "$EXPECTED_REPO" || "$HEAD_REF" != "develop" ]]; then
-            echo "PRs targeting main must come from $EXPECTED_REPO:develop." >&2
+          if [[ "$HEAD_REPO" != "$EXPECTED_REPO" ]]; then
+            echo "PRs targeting main must come from the same repository." >&2
+            exit 1
+          fi
+          if [[ "$HEAD_REF" != "develop" && ! "$HEAD_REF" =~ ^hotfix/[a-z0-9._/-]+$ ]]; then
+            echo "PRs targeting main must come from develop or hotfix/*." >&2
             exit 1
           fi

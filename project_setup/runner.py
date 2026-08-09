@@ -3,19 +3,23 @@ from __future__ import annotations
 import json
 
 from .github import GitHubClient
-from .issue_milestones import sync_issue_milestones
 from .issues import generate_issues
 from .labels import sync_labels
 from .milestones import sync_milestones
-from .project import create_project, sync_project
+from .project import create_project
 
 
-def load_bootstrap_config(path: str) -> dict:
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+def load_project_setup_config(path: str) -> dict:
+    with open(path, "r", encoding="utf-8") as file:
+        config = json.load(file)
+    required = ("labelsFile", "milestonesFile", "projectDefinitionFile", "backlogManifestFile")
+    missing = [key for key in required if key not in config]
+    if missing:
+        raise ValueError(f"project setup config is missing: {', '.join(missing)}")
+    return config
 
 
-def run_bootstrap(
+def run_project_setup(
     client: GitHubClient,
     repo: str,
     config: dict,
@@ -34,11 +38,15 @@ def run_bootstrap(
         print("==> Sync milestones")
         sync_milestones(client, repo, config["milestonesFile"], dry_run=dry_run)
     if run_project_creation:
-        print("==> Create project v2")
+        print("==> Create Project v2")
         create_project(client, repo, config["projectDefinitionFile"], dry_run=dry_run)
     if run_issue_generation:
-        print("==> Generate issues/tasks")
-        generate_issues(repo, config["backlogManifestFile"], dry_run=dry_run, link_subissues=link_subissues and not dry_run)
-
-    print("Governance bootstrap finished.")
-
+        print("==> Generate issues and tasks")
+        generate_issues(
+            None if dry_run else client,
+            repo,
+            config["backlogManifestFile"],
+            dry_run=dry_run,
+            link_subissues=link_subissues and not dry_run,
+        )
+    print("Project setup finished.")

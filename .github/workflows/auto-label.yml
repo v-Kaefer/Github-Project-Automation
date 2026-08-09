@@ -3,32 +3,33 @@ name: Auto label
 on:
   issues:
     types: [opened, edited, reopened]
-  pull_request:
+  pull_request_target:
     types: [opened, edited, reopened, synchronize]
 
 permissions:
   contents: read
   issues: write
-  pull-requests: read
+
+concurrency:
+  group: auto-label-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   auto-label:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Checkout trusted repository automation
+        uses: actions/checkout@v6
         with:
-          python-version: '3.11'
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          persist-credentials: false
 
-      - name: Install governance tool
-        run: pip install -e . --quiet
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
 
       - name: Apply inferred labels
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_EVENT_PATH: ${{ github.event_path }}
-        run: python -m governance_bootstrap auto-label apply
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python -m project_setup auto-label apply --live

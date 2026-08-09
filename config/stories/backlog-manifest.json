@@ -1,43 +1,23 @@
 {
   "version": "1.0.0",
-  "repository": "owner/repo",
+  "repository": "owner/repository",
   "defaultIssueLabels": ["status:backlog"],
-  "milestones": [
+  "phases": [
     {
+      "phaseId": "setup",
       "milestone": "M0",
       "stories": [
         {
           "storyId": "US-00",
-          "title": "US-00 | Set up repository, project board and initial backlog",
-          "labels": ["type:user-story", "priority:critical", "test:manual"],
-          "body": "As a team, we want an operational repository structure so we can run the project with consistent traceability and review.",
-          "acceptanceCriteria": "- Milestones created\n- Labels synced\n- Project board configured\n- Initial backlog published",
-          "testStrategy": "- Manual verification of milestones, labels and board",
-          "dod": "- All setup steps completed and visible in the repo",
+          "title": "US-00 | Configure repository automation",
+          "body": "## Context\nEstablish repository conventions, templates and automated checks.",
+          "labels": ["type:user-story", "priority:high", "test:manual"],
+          "acceptanceCriteria": "- Required workflows are installed.\n- Dry-run completes successfully.\n- Repository-specific values replace the examples.",
+          "testStrategy": "- Run `make check`.\n- Run `make plan REPO=owner/repository`.",
+          "dod": "- Configuration reviewed.\n- Secrets and variables documented.\n- No placeholder repository values remain.",
           "tasks": [
-            "T-00.1 | Create milestones",
-            "T-00.2 | Create GitHub Project v2 with fields and views",
-            "T-00.3 | Sync base labels",
-            "T-00.4 | Create issue and PR templates",
-            "T-00.5 | Publish initial backlog"
-          ]
-        }
-      ]
-    },
-    {
-      "milestone": "M1",
-      "stories": [
-        {
-          "storyId": "US-01",
-          "title": "US-01 | Example user story for milestone 1",
-          "labels": ["type:user-story", "priority:high", "test:automated"],
-          "body": "As a user, I want an example feature so I can understand the story format.",
-          "acceptanceCriteria": "- Acceptance criterion 1\n- Acceptance criterion 2",
-          "testStrategy": "- automated",
-          "dod": "- Implementation complete\n- Tests passing\n- Reviewed and merged",
-          "tasks": [
-            "T-01.1 | Example task 1",
-            "T-01.2 | Example task 2"
+            "T-00.1 | Customize labels and milestones",
+            "T-00.2 | Review workflows and branch policy"
           ]
         }
       ]

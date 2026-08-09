@@ -1,18 +1,19 @@
-# Python
 __pycache__/
 *.py[cod]
-*.egg-info/
-dist/
-build/
-.eggs/
-*.egg
+*$py.class
 .venv/
 venv/
 env/
-
-# pytest
-.pytest_cache/
-
-# local env files
 .env
-.env.local
+.env.*
+!.env.example
+build/
+dist/
+*.egg
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.DS_Store
+Thumbs.db

@@ -1,6 +1,10 @@
 [
-  {"title": "M0", "description": "Project setup and bootstrap", "due_on": "2026-01-31T00:00:00Z"},
-  {"title": "M1", "description": "First deliverable", "due_on": "2026-02-28T00:00:00Z"},
-  {"title": "M2", "description": "Second deliverable", "due_on": "2026-03-31T00:00:00Z"},
-  {"title": "M3", "description": "Final delivery", "due_on": "2026-04-30T00:00:00Z"}
+  {
+    "title": "M0",
+    "description": "Repository setup, conventions and automation"
+  },
+  {
+    "title": "M1",
+    "description": "First planned product increment"
+  }
 ]

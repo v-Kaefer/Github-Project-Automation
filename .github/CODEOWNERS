@@ -1,5 +1,8 @@
-# Optional fallback ownership for governance files
+# Fallback ownership for project setup and repository automation files
 /.github/ @v-Kaefer
+/project_setup/ @v-Kaefer
 /config/ @v-Kaefer
 /docs/repo/ @v-Kaefer
-/scripts/github/ @v-Kaefer
+/scripts/validation/ @v-Kaefer
+/Makefile @v-Kaefer
+/pyproject.toml @v-Kaefer
