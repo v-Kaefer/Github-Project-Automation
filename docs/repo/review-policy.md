@@ -1,13 +1,13 @@
 # Review Policy (EN)
 
-## Task PR -> Phase branch
-- Reviewed by phase responsible pair.
+## Task PR -> Milestone branch
+- Reviewed by milestone responsible pair.
 
-## Phase PR -> develop
-- Approved by the other 2 members + at least 1 phase responsible.
+## Milestone PR -> develop
+- Approved by the other members + at least 1 milestone responsible.
 
 ## develop PR -> main
-- Approved by all 4 members.
+- Approved by all members.
 
 ## Note
-- Pair assignments per phase are pending final decision.
+- Pair assignments per milestone are defined in `config/phases/phase-review-policy.json`.

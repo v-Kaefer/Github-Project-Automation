@@ -1,13 +1,13 @@
 # Política de Review (PT-BR)
 
-## PR de task -> branch da fase
-- Revisado pela dupla responsável da fase.
+## PR de task -> branch do milestone
+- Revisado pela dupla responsável do milestone.
 
-## PR da fase -> develop
-- Aprovado pelos outros 2 membros + ao menos 1 responsável da fase.
+## PR do milestone -> develop
+- Aprovado pelos demais membros + ao menos 1 responsável do milestone.
 
 ## PR de develop -> main
-- Aprovado pelos 4 membros.
+- Aprovado por todos os membros.
 
 ## Observação
-- Definição das duplas por fase ainda pendente.
+- Definição das duplas por milestone em `config/phases/phase-review-policy.json`.

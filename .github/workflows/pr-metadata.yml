@@ -1,20 +1,46 @@
 name: PR metadata validation
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, edited]
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
 
 permissions:
   contents: read
+  issues: write
+
+concurrency:
+  group: pr-metadata-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
-  validate-pr-body:
+  validate-pr:
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout trusted base commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
 
-      - name: Ensure required PR sections and issue link
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Validate branch name and pull request metadata
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
-        run: python3 scripts/validation/validate_pr_body.py
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python scripts/validation/validate_pr_body.py \
+            --branch "$HEAD_REF" \
+            --base-branch "$BASE_REF" \
+            --repo "$REPOSITORY" \
+            --pr-number "$PR_NUMBER" \
+            --comment
