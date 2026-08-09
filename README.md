@@ -24,7 +24,7 @@ Typical uses include:
 - synchronize labels and milestones from versioned JSON manifests;
 - generate structured stories and tasks;
 - optionally link generated tasks as sub-issues;
-- create and synchronize GitHub Projects v2;
+- create and synchronize GitHub Projects v2 owned by a personal account or GitHub Organization;
 - validate pull-request metadata and repository conventions;
 - inspect a repository and recommend a setup flow before applying it;
 - expose the same operations to humans, scripts, and AI agents through predictable Make/CLI commands.
@@ -66,11 +66,12 @@ Configure the target once:
 ```dotenv
 PROJECT_SETUP_TARGET=../my-project
 GITHUB_REPOSITORY=owner/my-project
+PROJECT_SETUP_OWNER_TYPE=user
 PROJECT_SETUP_CONFIG=project_setup.json
 PROJECT_SETUP_PROJECT_NUMBER=
 ```
 
-`PROJECT_SETUP_TARGET` is the local filesystem path. `GITHUB_REPOSITORY` is the GitHub `owner/repository` identifier. Once a Project v2 exists, `PROJECT_SETUP_PROJECT_NUMBER` can store its number for `make project-sync`.
+`PROJECT_SETUP_TARGET` is the local filesystem path. `GITHUB_REPOSITORY` is the GitHub `owner/repository` identifier. `PROJECT_SETUP_OWNER_TYPE` selects who owns GitHub Projects v2: use `user` for a personal account or `organization` for a company/team GitHub Organization. It may be left empty for authenticated auto-detection. Once a Project v2 exists, `PROJECT_SETUP_PROJECT_NUMBER` can store its number for `make project-sync`.
 
 If the tool is already embedded in and operated from the target repository itself, use:
 
@@ -112,10 +113,10 @@ make setup-live
 Persistent configuration is only a convenience. A one-off override still works and has precedence over `.env`:
 
 ```bash
-make setup TARGET=../other-project REPO=owner/other-project
+make setup TARGET=../other-project REPO=owner/other-project OWNER_TYPE=organization
 ```
 
-`LIVE=1` and `FORCE=1` intentionally remain command-line decisions rather than persistent `.env` defaults.
+`OWNER_TYPE=user|organization` overrides only the Project v2 owner type for that invocation. `LIVE=1` and `FORCE=1` intentionally remain command-line decisions rather than persistent `.env` defaults.
 
 ## 3. Authentication
 
@@ -167,6 +168,8 @@ PROJECT_SETUP_PAT=ghp_your_token_here
 
 For Actions: repository **Settings** → **Secrets and variables** → **Actions** → **New repository secret** → `PROJECT_SETUP_PAT`.
 
+Project owner type is independent from authentication. Configure `PROJECT_SETUP_OWNER_TYPE=user` or `PROJECT_SETUP_OWNER_TYPE=organization`, or leave it empty for auto-detection. See [Project v2 owner type](docs/repo/project-owner-type.md).
+
 Never commit `.env`. See GitHub's documentation for [personal access tokens](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) and [Projects automation](https://docs.github.com/en/issues/planning-and-tracking-with-projects/automating-your-project/automating-projects-using-actions).
 
 ## 4. Common commands
@@ -175,7 +178,7 @@ The target path and repository are normally read from `.env`. Remote mutating op
 
 | Command | Default mode | What it does |
 | --- | --- | --- |
-| `make help` | Read-only | Shows detected platform, resolved `.env` defaults, Python command, and available targets. |
+| `make help` | Read-only | Shows detected platform, resolved `.env` defaults, Project owner type, Python command, and available targets. |
 | `make doctor` | Read-only | Checks `.env`, token sources, `gh auth`, OS/Python, configuration, and referenced manifests. |
 | `make check` | Local validation | Runs repository quality checks, compilation, and unit tests. |
 | `make discover` | Read-only | Detects the configured target stack and prints a safe recommended setup command. |
@@ -187,7 +190,7 @@ The target path and repository are normally read from `.env`. Remote mutating op
 | `make labels` | Dry-run | Previews label synchronization. |
 | `make milestones` | Dry-run | Previews milestone synchronization. |
 | `make issues` | Dry-run | Previews story/task generation. |
-| `make project-create` | Dry-run | Previews Project v2 creation. |
+| `make project-create` | Dry-run | Previews Project v2 creation using the configured/auto-detected owner type. |
 | `make project-sync` | Dry-run | Uses `PROJECT_SETUP_PROJECT_NUMBER`; without a PAT it can show the offline Project definition preview. |
 | `make clean` | Local write | Removes generated Python/build artifacts only. |
 
@@ -210,6 +213,7 @@ Any persistent target/repository value can be overridden for one invocation:
 
 ```bash
 make plan TARGET=../other-project REPO=owner/other-project
+make project-create OWNER_TYPE=organization
 ```
 
 The equivalent CLI uses `--live`; `--no-dry-run` remains only as a compatibility alias.
@@ -219,10 +223,11 @@ The equivalent CLI uses `--live`; `--no-dry-run` remains only as a compatibility
 The tool is intentionally conservative because repository setup mixes local files, GitHub REST resources, GraphQL resources, credentials, and potentially destructive writes.
 
 - **Dry-run first:** every remote mutating CLI command previews by default. A live write requires `--live` or `LIVE=1`.
-- **Persistent location, explicit mutation:** target/repository identity may live in `.env`, but `LIVE=1` and `FORCE=1` are deliberately not persistent defaults.
+- **Persistent location, explicit mutation:** target/repository identity and Project owner type may live in `.env`, but `LIVE=1` and `FORCE=1` are deliberately not persistent defaults.
 - **Preserve target files:** the installer skips existing files unless overwrite is explicitly requested. Existing Makefiles, environment templates, and AI instructions should be reviewed and merged rather than blindly replaced.
 - **No filesystem side effect during install preview:** `init --dry-run` does not create the target directory.
 - **Explicit Project v2 boundary:** live Project v2 operations require `PROJECT_SETUP_PAT`; they do not silently fall back to `github.token`.
+- **Project owner namespace safety:** Project v2 operations query only the resolved `user` or `organization` GraphQL namespace instead of querying both for one login.
 - **No credential logging:** diagnostics show credential source/status, never token values.
 - **Safe HTTP behavior:** GitHub requests have a finite timeout and are restricted to `https://api.github.com`.
 - **Mutation retry protection:** automatic transport retries are limited to idempotent reads. A lost response after a `POST`, `PATCH`, or `DELETE` is not automatically replayed.
@@ -237,6 +242,7 @@ Current intentional limits: generated issues are not idempotent yet, Project v2 
 | --- | --- |
 | [AI setup guide](AI_SETUP_GUIDE.md) | Operational contract for AI assistants: inspect existing patterns first, ask only for unresolved decisions, pause for manual/credential/live checkpoints, re-verify user changes, and verify results after application. |
 | [Portuguese README](README.pt-BR.md) | Complete Portuguese version of this overview, quick start, authentication, commands, safety model, environment defaults, and licensing information. |
+| [Project owner type](docs/repo/project-owner-type.md) | How to select `user` versus `organization`, auto-detection behavior, Make overrides, GraphQL namespace handling, and Q.A coverage. |
 | [Project Setup runbook (pt-BR)](docs/repo/project-setup-runbook.pt-BR.md) | Operational step-by-step procedure for configuring `.env`, diagnosing the environment, previewing, installing, and applying the tool in a target repository. |
 | [Shared tool internals](docs/repo/project-setup-shared-tool.md) | Distribution model, package/CLI boundaries, authentication boundary, request-safety decisions, and what the reusable core automates. |
 | [Branching policy](docs/repo/branching-policy.md) | Supported branch naming/source rules and the repository policy enforced around pull requests. |
