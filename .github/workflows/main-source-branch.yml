@@ -17,7 +17,7 @@ jobs:
     name: validate-main-source
     runs-on: ubuntu-latest
     steps:
-      - name: Ensure PR to main comes from develop or hotfix
+      - name: Ensure PR to main comes from Q.A
         shell: bash
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
@@ -36,7 +36,7 @@ jobs:
             echo "PRs targeting main must come from the same repository." >&2
             exit 1
           fi
-          if [[ "$HEAD_REF" != "develop" && ! "$HEAD_REF" =~ ^hotfix/[a-z0-9._/-]+$ ]]; then
-            echo "PRs targeting main must come from develop or hotfix/*." >&2
+          if [[ "$HEAD_REF" != "Q.A" ]]; then
+            echo "PRs targeting main must come from Q.A." >&2
             exit 1
           fi
