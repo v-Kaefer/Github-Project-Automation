@@ -30,6 +30,7 @@ def run_project_setup(
     run_project_creation: bool,
     run_issue_generation: bool,
     link_subissues: bool,
+    owner_type: str | None = None,
 ) -> None:
     if run_labels:
         print("==> Sync labels")
@@ -39,7 +40,13 @@ def run_project_setup(
         sync_milestones(client, repo, config["milestonesFile"], dry_run=dry_run)
     if run_project_creation:
         print("==> Create Project v2")
-        create_project(client, repo, config["projectDefinitionFile"], dry_run=dry_run)
+        create_project(
+            client,
+            repo,
+            config["projectDefinitionFile"],
+            dry_run=dry_run,
+            owner_type=owner_type,
+        )
     if run_issue_generation:
         print("==> Generate issues and tasks")
         generate_issues(
