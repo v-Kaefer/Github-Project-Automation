@@ -2,6 +2,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-green.svg)](LICENSE)
 [![Status: beta](https://img.shields.io/badge/status-beta-orange.svg)](https://github.com/v-Kaefer/Github-Project-Automation)
+[![Agent Ready](https://img.shields.io/badge/Agent-Ready-6f42c1.svg)](AI_SETUP_GUIDE.md)
 
 # GitHub Project Setup
 
