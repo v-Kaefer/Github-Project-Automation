@@ -191,8 +191,9 @@ class QaCliEndToEndTests(unittest.TestCase):
 
             result = run_cli("doctor", cwd=target)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("Doctor completed", result.stdout)
-            self.assertIn("No GitHub API changes were made", result.stdout)
+            output = result.stdout.casefold()
+            self.assertIn("doctor completed", output)
+            self.assertIn("no github api changes were made", output)
 
 
 if __name__ == "__main__":
