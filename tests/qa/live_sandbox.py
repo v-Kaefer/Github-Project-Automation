@@ -11,28 +11,26 @@ import urllib.parse
 from project_setup.github import API_BASE, GitHubClient, split_repo
 from project_setup.labels import sync_labels
 from project_setup.milestones import sync_milestones
-from project_setup.project import create_project, list_project_fields, sync_project
+from project_setup.project import create_project, list_project_fields, resolve_owner_type, sync_project
 
 
 def write_json(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def project_by_title(client: GitHubClient, owner: str, title: str) -> dict | None:
-    query = """
-    query($login:String!) {
-      user(login:$login) { projectsV2(first:100) { nodes { id number title url } } }
-      organization(login:$login) { projectsV2(first:100) { nodes { id number title url } } }
-    }
+def project_by_title(client: GitHubClient, owner: str, title: str, owner_type: str) -> dict | None:
+    query = f"""
+    query($login:String!) {{
+      {owner_type}(login:$login) {{ projectsV2(first:100) {{ nodes {{ id number title url }} }} }}
+    }}
     """
     data = client.graphql(query, {"login": owner})
-    for owner_type in ("user", "organization"):
-        node = data.get(owner_type)
-        if not node:
-            continue
-        for project in node["projectsV2"]["nodes"]:
-            if project and project.get("title") == title:
-                return project
+    node = data.get(owner_type)
+    if not node:
+        return None
+    for project in node["projectsV2"]["nodes"]:
+        if project and project.get("title") == title:
+            return project
     return None
 
 
@@ -88,6 +86,7 @@ def cleanup_resources(
     client: GitHubClient,
     repo: str,
     owner: str,
+    owner_type: str,
     *,
     label_name: str,
     milestone_title: str,
@@ -100,11 +99,11 @@ def cleanup_resources(
     try:
         cleanup_project_id = project_id
         if not cleanup_project_id:
-            project = project_by_title(client, owner, project_title)
+            project = project_by_title(client, owner, project_title, owner_type)
             cleanup_project_id = project["id"] if project else None
         if cleanup_project_id:
             delete_project(client, cleanup_project_id)
-            if project_by_title(client, owner, project_title):
+            if project_by_title(client, owner, project_title, owner_type):
                 raise RuntimeError("Project still exists after deleteProjectV2")
             print("cleanup_project=passed")
     except Exception as exc:
@@ -145,6 +144,7 @@ def main() -> int:
     token = os.environ["PROJECT_SETUP_PAT"].strip()
     client = GitHubClient(token)
     owner, _ = split_repo(args.repo)
+    owner_type = resolve_owner_type(client, owner)
     suffix = re.sub(r"[^A-Za-z0-9_.-]+", "-", args.run_id).strip("-")[:40] or "manual"
     label_name = f"qa:run-{suffix}"
     milestone_title = f"QA-{suffix}"
@@ -154,6 +154,7 @@ def main() -> int:
     primary_error: Exception | None = None
 
     print(f"sandbox_repository={args.repo}")
+    print(f"sandbox_owner_type={owner_type}")
     print(f"qa_run_id={suffix}")
 
     try:
@@ -214,8 +215,8 @@ def main() -> int:
                     ],
                 },
             )
-            create_project(client, args.repo, str(project_file), dry_run=False)
-            project = project_by_title(client, owner, project_title)
+            create_project(client, args.repo, str(project_file), dry_run=False, owner_type=owner_type)
+            project = project_by_title(client, owner, project_title, owner_type)
             if not project:
                 raise RuntimeError("Project v2 creation verification failed")
             created_project_id = project["id"]
@@ -228,6 +229,7 @@ def main() -> int:
                 owner=owner,
                 issue_state="open",
                 dry_run=False,
+                owner_type=owner_type,
             )
             sync_project(
                 client,
@@ -237,6 +239,7 @@ def main() -> int:
                 owner=owner,
                 issue_state="open",
                 dry_run=False,
+                owner_type=owner_type,
             )
             fields = list_project_fields(client, created_project_id)
             qa_text = [field for field in fields if field.get("name") == "QA Text"]
@@ -251,6 +254,7 @@ def main() -> int:
         client,
         args.repo,
         owner,
+        owner_type,
         label_name=label_name,
         milestone_title=milestone_title,
         project_title=project_title,
