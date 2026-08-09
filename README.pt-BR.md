@@ -24,7 +24,7 @@ Usos típicos:
 - sincronizar labels e milestones a partir de manifests JSON versionados;
 - gerar stories e tasks estruturadas;
 - opcionalmente vincular tasks como sub-issues;
-- criar e sincronizar GitHub Projects v2;
+- criar e sincronizar GitHub Projects v2 pertencentes a uma conta pessoal ou GitHub Organization;
 - validar metadados de pull request e convenções do repositório;
 - inspecionar um projeto e recomendar um fluxo de setup antes de aplicar alterações;
 - disponibilizar as mesmas operações para pessoas, scripts e agentes de IA através de comandos previsíveis em Make/CLI.
@@ -66,11 +66,12 @@ Configure o alvo uma vez:
 ```dotenv
 PROJECT_SETUP_TARGET=../meu-projeto
 GITHUB_REPOSITORY=owner/meu-projeto
+PROJECT_SETUP_OWNER_TYPE=user
 PROJECT_SETUP_CONFIG=project_setup.json
 PROJECT_SETUP_PROJECT_NUMBER=
 ```
 
-`PROJECT_SETUP_TARGET` é o caminho local no sistema de arquivos. `GITHUB_REPOSITORY` é o identificador `owner/repository` no GitHub. Quando um Project v2 já existir, `PROJECT_SETUP_PROJECT_NUMBER` pode guardar o número utilizado por `make project-sync`.
+`PROJECT_SETUP_TARGET` é o caminho local no sistema de arquivos. `GITHUB_REPOSITORY` é o identificador `owner/repository` no GitHub. `PROJECT_SETUP_OWNER_TYPE` seleciona quem é o proprietário do GitHub Projects v2: use `user` para uma conta pessoal ou `organization` para uma empresa/equipe representada por GitHub Organization. Ele pode ficar vazio para autodetecção durante operações autenticadas. Quando um Project v2 já existir, `PROJECT_SETUP_PROJECT_NUMBER` pode guardar o número utilizado por `make project-sync`.
 
 Se a ferramenta já estiver incorporada no próprio repositório-alvo e for executada de dentro dele, use:
 
@@ -112,10 +113,10 @@ make setup-live
 A configuração persistente é apenas uma conveniência. Um override pontual continua funcionando e tem precedência sobre o `.env`:
 
 ```bash
-make setup TARGET=../outro-projeto REPO=owner/outro-projeto
+make setup TARGET=../outro-projeto REPO=owner/outro-projeto OWNER_TYPE=organization
 ```
 
-`LIVE=1` e `FORCE=1` continuam propositalmente fora do `.env`, para que escrita real e sobrescrita nunca sejam habilitadas de forma persistente por acidente.
+`OWNER_TYPE=user|organization` sobrescreve apenas o tipo do proprietário do Project v2 naquela execução. `LIVE=1` e `FORCE=1` continuam propositalmente fora do `.env`, para que escrita real e sobrescrita nunca sejam habilitadas de forma persistente por acidente.
 
 ## 3. Autenticação
 
@@ -167,6 +168,8 @@ PROJECT_SETUP_PAT=ghp_seu_token_aqui
 
 Para Actions: **Settings** do repositório → **Secrets and variables** → **Actions** → **New repository secret** → `PROJECT_SETUP_PAT`.
 
+O tipo do owner é independente da autenticação. Configure `PROJECT_SETUP_OWNER_TYPE=user` ou `PROJECT_SETUP_OWNER_TYPE=organization`, ou deixe vazio para autodetecção. Consulte [Tipo de proprietário do Project v2](docs/repo/project-owner-type.pt-BR.md).
+
 Nunca versione o `.env`. Consulte a documentação do GitHub sobre [personal access tokens](https://docs.github.com/pt/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) e [automação de Projects](https://docs.github.com/pt/issues/planning-and-tracking-with-projects/automating-your-project/automating-projects-using-actions).
 
 ## 4. Comandos principais
@@ -175,7 +178,7 @@ O caminho local e o repositório remoto são normalmente lidos do `.env`. Dry-ru
 
 | Comando | Modo padrão | O que faz |
 | --- | --- | --- |
-| `make help` | Somente leitura | Mostra plataforma detectada, defaults resolvidos do `.env`, comando Python e targets disponíveis. |
+| `make help` | Somente leitura | Mostra plataforma detectada, defaults resolvidos do `.env`, tipo do owner do Project, comando Python e targets disponíveis. |
 | `make doctor` | Somente leitura | Verifica `.env`, origem dos tokens, `gh auth`, SO/Python, configuração e manifests referenciados. |
 | `make check` | Validação local | Executa quality checks, compilação e testes unitários. |
 | `make discover` | Somente leitura | Detecta a stack do alvo configurado e imprime um comando recomendado seguro. |
@@ -187,7 +190,7 @@ O caminho local e o repositório remoto são normalmente lidos do `.env`. Dry-ru
 | `make labels` | Dry-run | Simula sincronização de labels. |
 | `make milestones` | Dry-run | Simula sincronização de milestones. |
 | `make issues` | Dry-run | Simula geração de stories/tasks. |
-| `make project-create` | Dry-run | Simula criação de Project v2. |
+| `make project-create` | Dry-run | Simula criação de Project v2 usando o owner configurado ou autodetectado. |
 | `make project-sync` | Dry-run | Usa `PROJECT_SETUP_PROJECT_NUMBER`; sem PAT, pode mostrar o preview offline da definição. |
 | `make clean` | Escrita local | Remove apenas artefatos Python/build gerados. |
 
@@ -210,6 +213,7 @@ Qualquer alvo/repositório persistente pode ser sobrescrito para apenas uma exec
 
 ```bash
 make plan TARGET=../outro-projeto REPO=owner/outro-projeto
+make project-create OWNER_TYPE=organization
 ```
 
 Na CLI, o equivalente é `--live`; `--no-dry-run` permanece apenas como alias de compatibilidade.
@@ -219,10 +223,11 @@ Na CLI, o equivalente é `--live`; `--no-dry-run` permanece apenas como alias de
 A ferramenta é deliberadamente conservadora porque o setup mistura arquivos locais, recursos REST, recursos GraphQL, credenciais e operações potencialmente destrutivas.
 
 - **Dry-run primeiro:** todo comando remoto mutável simula por padrão. Escrita real exige `--live` ou `LIVE=1`.
-- **Localização persistente, mutação explícita:** identidade do alvo/repositório pode ficar no `.env`, mas `LIVE=1` e `FORCE=1` não são defaults persistentes.
+- **Localização persistente, mutação explícita:** identidade do alvo/repositório e tipo do owner do Project podem ficar no `.env`, mas `LIVE=1` e `FORCE=1` não são defaults persistentes.
 - **Preservação dos arquivos do alvo:** o instalador ignora arquivos existentes salvo quando a sobrescrita é pedida explicitamente. Makefiles, templates de ambiente e instruções para IA existentes devem ser revisados e mesclados, não substituídos cegamente.
 - **Preview de instalação sem efeito colateral:** `init --dry-run` não cria o diretório-alvo.
 - **Fronteira explícita de Project v2:** operações reais exigem `PROJECT_SETUP_PAT`; não existe fallback silencioso para `github.token`.
+- **Segurança do namespace do owner:** operações de Project v2 consultam apenas o namespace GraphQL resolvido, `user` ou `organization`, em vez de consultar ambos para o mesmo login.
 - **Sem log de credenciais:** os diagnósticos mostram origem/estado, nunca o valor dos tokens.
 - **HTTP restrito:** as chamadas têm timeout finito e ficam restritas a `https://api.github.com`.
 - **Proteção contra repetição de mutações:** retentativas automáticas de transporte ficam limitadas a leituras idempotentes. Uma resposta perdida após `POST`, `PATCH` ou `DELETE` não provoca replay automático.
@@ -237,6 +242,7 @@ Limitações intencionais atuais: geração de issues ainda não é idempotente,
 | --- | --- |
 | [Guia de setup para IA](AI_SETUP_GUIDE.md) | Contrato operacional para agentes de IA: consultar padrões existentes primeiro, perguntar apenas decisões pendentes, parar em checkpoints manuais/de credenciais/live, verificar novamente mudanças do usuário e validar resultados após a aplicação. |
 | [README em inglês](README.md) | Versão principal internacional com visão geral, quick start, autenticação, comandos, segurança, defaults de ambiente e licença. |
+| [Tipo de proprietário do Project v2](docs/repo/project-owner-type.pt-BR.md) | Como selecionar `user` ou `organization`, autodetecção, overrides no Make, tratamento do namespace GraphQL e cobertura de Q.A. |
 | [Runbook do Project Setup](docs/repo/project-setup-runbook.pt-BR.md) | Procedimento operacional passo a passo para configurar `.env`, diagnosticar, simular, instalar e aplicar a ferramenta em outro repositório. |
 | [Internos da ferramenta compartilhada](docs/repo/project-setup-shared-tool.md) | Modelo de distribuição, limites do pacote/CLI, fronteira de autenticação, decisões de segurança HTTP e escopo do core reutilizável. |
 | [Política de branches](docs/repo/branching-policy.pt-BR.md) | Convenções de nomes/origens de branches e regras esperadas para pull requests. |
