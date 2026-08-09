@@ -57,7 +57,12 @@ def meaningful(lines: list[str]) -> bool:
 
 def validate_branch(branch: str | None, base_branch: str | None = None) -> list[ValidationFinding]:
     normalized = (branch or "").strip()
-    if normalized == "develop" and (base_branch or "").strip() == "main":
+    base = (base_branch or "").strip()
+    promotion_paths = {
+        ("develop", "Q.A"),
+        ("Q.A", "main"),
+    }
+    if (normalized, base) in promotion_paths:
         return []
     if BRANCH_PATTERN.fullmatch(normalized.casefold()):
         return []
@@ -65,7 +70,7 @@ def validate_branch(branch: str | None, base_branch: str | None = None) -> list[
         ValidationFinding(
             "Branch name",
             f"Invalid branch name: `{normalized or '(missing)'}`.",
-            "Use a supported prefix such as `feat/`, `fix/`, `docs/`, `task/`, `chore/`, `hotfix/`, or `release/`.",
+            "Use a supported implementation prefix or promote through `develop -> Q.A -> main`.",
         )
     ]
 
