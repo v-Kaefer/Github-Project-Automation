@@ -18,7 +18,7 @@ or:
 PROJECT_SETUP_OWNER_TYPE=organization
 ```
 
-The documented values are `user` and `organization`. The implementation also accepts `org` and `company` as aliases for `organization`.
+The documented values are `user` and `organization`. The implementation also accepts `org` and `company` as aliases for `organization` when resolving persistent configuration.
 
 This setting is non-secret. It tells the GraphQL layer which GitHub namespace owns the Project v2 board. It does not change repository permissions and does not replace `PROJECT_SETUP_PAT`.
 
@@ -67,6 +67,58 @@ The Makefile exports the resolved value as `PROJECT_SETUP_OWNER_TYPE`, so the Py
 
 `make help` displays the resolved value. When it is empty, the output reports `auto-detect`.
 
+## CLI behavior
+
+The same selection is available directly in the Python CLI. The CLI deliberately exposes only the canonical values `user` and `organization`:
+
+```bash
+project-setup project create \
+  --repo Example-Company/example \
+  --owner-type organization \
+  --live
+```
+
+```bash
+project-setup project sync \
+  --repo v-Kaefer/example \
+  --project-number 3 \
+  --owner-type user \
+  --dry-run
+```
+
+The complete configured setup also accepts the option:
+
+```bash
+project-setup apply \
+  --repo Example-Company/example \
+  --owner-type organization \
+  --dry-run
+```
+
+CLI `--owner-type` has precedence for that invocation. Without it, the implementation uses `PROJECT_SETUP_OWNER_TYPE`; if that is empty, authenticated Project v2 operations auto-detect the owner type.
+
+## Diagnostics
+
+`make help` shows the persistent/Make-resolved selection. `make doctor` reports:
+
+```text
+project_owner_type=user
+```
+
+or:
+
+```text
+project_owner_type=organization
+```
+
+When no type is configured, it reports:
+
+```text
+project_owner_type=auto-detect
+```
+
+An invalid configured value is a blocking `doctor` error with a corrective instruction.
+
 ## Authentication
 
 Owner type and authentication are separate settings. Live Project v2 operations still require:
@@ -91,5 +143,8 @@ The test suite validates:
 - explicit `organization` selection;
 - automatic User detection;
 - automatic Organization detection;
+- empty configuration falling back to auto-detection;
 - environment selection taking precedence over auto-detection;
+- CLI selection for `project create`, `project sync`, and `apply`;
+- Makefile `.env` resolution and `OWNER_TYPE` override;
 - live sandbox reuse of the resolved type during create, lookup, sync, and cleanup.
