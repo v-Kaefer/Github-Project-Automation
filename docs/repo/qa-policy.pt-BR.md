@@ -38,7 +38,7 @@ Ele valida:
 - build de wheel e source distribution;
 - instalação do wheel em ambiente virtual limpo.
 
-Esse workflow não exige credenciais de escrita no GitHub.
+Esse workflow não exige credenciais de escrita no GitHub. O job final `qa-gate` agrega repository quality, toda a matriz de compatibilidade e o package artifact em um único check estável para branch protection.
 
 ## Gate Q.A 2: validação live em sandbox
 
@@ -57,6 +57,8 @@ O workflow mapeia `QA_PROJECT_SETUP_PAT` para `PROJECT_SETUP_PAT` somente dentro
 
 O repositório principal da ferramenta nunca pode ser usado como `QA_REPOSITORY`; workflow e script recusam essa configuração.
 
+Para isolamento mais forte, use uma conta GitHub dedicada de Q.A/bot que seja dona ou tenha acesso apenas ao sandbox e aos Projects temporários. Evite usar um token pessoal amplo de desenvolvedor na automação de Q.A. Se o Environment `qa` exigir reviewers, a credencial live só é liberada depois da aprovação do environment gate.
+
 ### Recursos live testados
 
 Cada run cria recursos temporários com nomes únicos:
@@ -69,7 +71,7 @@ Para labels e milestones o fluxo é: criar -> verificar -> atualizar -> verifica
 
 Para Project v2, o teste cria o Project, sincroniza duas vezes, confirma que os fields não foram duplicados e relê o estado remoto.
 
-Antes de terminar, o workflow remove label, milestone e Project temporários. Falha no cleanup faz o job falhar.
+Antes de terminar, o workflow remove label, milestone e Project temporários. Falha no cleanup faz o job falhar. O nome estável do check é `qa-live-gate`.
 
 ## Teste manual de geração de issues
 
@@ -87,20 +89,20 @@ As duas issues fechadas permanecem no histórico do sandbox por decisão conscie
 
 ## Checks recomendados como obrigatórios
 
-Para PRs destinados a `Q.A`, exigir pelo menos:
+Para PRs destinados a `Q.A`, exigir:
 
 - `validate-qa-source`;
-- `repository-quality / ubuntu / py3.11`;
-- todos os resultados `compatibility / ...` da matriz;
-- `package-artifact / wheel-and-sdist`.
+- `qa-gate`.
 
-Depois que o Environment `qa` estiver configurado e estabilizado, exigir também o live sandbox antes da promoção de `Q.A` para `main`.
+Isso mantém a branch protection estável mesmo quando a matriz de compatibilidade mudar.
+
+Depois que o Environment `qa` estiver configurado e estabilizado, exigir `qa-live-gate` como evidência antes da promoção de `Q.A` para `main`.
 
 Para PRs destinados a `main`, exigir:
 
 - `validate-main-source`;
 - checks normais do repositório e metadados de PR;
-- evidência de que exatamente o commit promovido em Q.A passou pelos gates determinístico e live.
+- evidência de que exatamente o commit promovido em Q.A passou por `qa-gate` e `qa-live-gate`.
 
 ## Política de falha
 
