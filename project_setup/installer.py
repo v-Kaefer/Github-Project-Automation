@@ -26,6 +26,11 @@ CORE_TEMPLATE_FILES = (
     "scripts/validation/validate_pr_body.py",
 )
 
+LICENSE_TEMPLATE_FILES = (
+    ("LICENSE", "licenses/project_setup/LICENSE"),
+    ("NOTICE", "licenses/project_setup/NOTICE"),
+)
+
 PROFILE_FILES = {
     "core": (),
 }
@@ -56,7 +61,7 @@ def template_files(source_root: Path, profile: str) -> tuple[tuple[str, str], ..
     if profile not in PROFILE_FILES:
         raise ValueError(f"Unknown profile '{profile}'. Available profiles: {', '.join(PROFILE_FILES)}")
     core = tuple((path, path) for path in CORE_TEMPLATE_FILES)
-    return (*core, *package_files(source_root), *PROFILE_FILES[profile])
+    return (*core, *LICENSE_TEMPLATE_FILES, *package_files(source_root), *PROFILE_FILES[profile])
 
 
 def install_repository(
