@@ -19,6 +19,7 @@ This guide maps the reusable configuration, workflows and operational documentat
 | Target repository instructions and recorded conventions (`AGENTS.md`, `CONTRIBUTING*`, README/docs, existing workflows/configuration) | Authoritative for repository-specific decisions and established project standards. |
 | `AI_SETUP_GUIDE.md` | Authoritative for the AI interaction sequence: inspect before asking, pause at checkpoints, re-verify user changes, protect credentials, and verify applied results. |
 | `docs/repo/qa-policy.md` / `docs/repo/qa-policy.pt-BR.md` | Authoritative for the `develop -> Q.A -> main` promotion gates, compatibility matrix, sandbox requirements, and live/manual Q.A behavior. |
+| `docs/repo/pr-sync.md` / `docs/repo/pr-sync.pt-BR.md` | Design contract for the planned PR Sync feature; not an implementation-status claim until the feature lands. |
 | `docs/repo/project-setup-runbook.pt-BR.md` | Detailed human operational procedure and troubleshooting path. |
 | `README.md` / `README.pt-BR.md` | Concise user-facing overview, setup, authentication, commands, and safety model. |
 
@@ -37,6 +38,16 @@ The AI guide does not override project-specific conventions. Its purpose is to m
 | `.github/workflows/qa-issue-generation.yml` | Run guarded manual non-idempotent issue-generation validation | `tests/qa/live_issue_generation.py`, `docs/repo/qa-policy.md` |
 | `.github/workflows/main-source-branch.yml` | Allow promotion into `main` only from `Q.A` | `docs/repo/branching-policy.md`, `project_setup/pr_validation.py` |
 | `.github/workflows/repo-quality.yml` | Validate this tool repository | `Makefile`, `scripts/validation/repo_quality.py`, `tests/` |
+
+## Feature design contracts
+
+Feature branches may carry design documentation before implementation begins. These documents must say explicitly when behavior is planned rather than implemented.
+
+Current design contracts:
+
+- `docs/repo/pr-sync.md` / `docs/repo/pr-sync.pt-BR.md`: planned PR Sync orchestration, lifecycle mapping, security model, relationship to PR Guardrails, promotion-PR exclusions, and required regression/live validation.
+
+When PR Sync is implemented, this guide must be updated in the same change to map the real workflow and source module rather than leaving it as a design-only contract.
 
 ## Adding a milestone template
 
@@ -65,7 +76,7 @@ project_setup.json                   File paths and execution defaults
 config/project/                      Labels, milestones and Project v2 definition
 config/stories/                      Backlog manifest
 .github/workflows/                   Generic active workflows and Q.A gates
-docs/repo/                           Operational policies and runbooks
+docs/repo/                           Operational policies, runbooks, and feature design contracts
 tests/qa/                            Q.A black-box, live sandbox, and guarded manual tests
 scripts/validation/                  Cross-platform validation entrypoints
 tests/                               Unit and installation tests
