@@ -19,7 +19,49 @@ Promoções diretas `develop -> main`, branch de implementação -> `Q.A` e bran
 
 Os gates, testes e requisitos do sandbox estão documentados em [`qa-policy.pt-BR.md`](qa-policy.pt-BR.md).
 
-Repositórios que adotarem outro modelo de promoção devem adaptar juntos `.github/workflows/qa-source-branch.yml`, `.github/workflows/main-source-branch.yml` e o validador de branch de PR, em vez de alterar apenas uma camada.
+Repositórios que adotarem outro modelo de promoção devem adaptar juntos `.github/workflows/qa-source-branch.yml`, `.github/workflows/main-source-branch.yml`, o validador de branch e as exclusões de promoção da PR Sync, em vez de alterar apenas uma camada.
+
+## Gates confiáveis de promoção
+
+Os gates de origem para `Q.A` e `main` são verificações privilegiadas apenas de metadata.
+
+Eles utilizam `pull_request_target` deliberadamente e **não fazem checkout do código do PR**:
+
+- `.github/workflows/qa-source-branch.yml` aceita somente `develop -> Q.A`;
+- `.github/workflows/main-source-branch.yml` aceita somente `Q.A -> main`.
+
+Esses workflows devem permanecer metadata-only. Adicionar `actions/checkout`, executar shell vindo do head do PR ou qualquer caminho que execute conteúdo não confiável sob o token de `pull_request_target` quebra o contrato de segurança.
+
+A validação lê apenas os refs de origem/destino do payload do evento e termina sem executar código da mudança proposta.
+
+## Repositório-fonte vs target embarcado
+
+O repositório-fonte do GPA é identificado explicitamente por `.project-setup-source`.
+
+Esse marker contém o contrato de identidade do source e **não** é distribuído pelo instalador. Um target que possua arquivos com nomes semelhantes aos internos do GPA não deve ser confundido com o repositório-fonte.
+
+Targets embarcados podem preservar arquivos próprios, como `Makefile` ou workflows callers existentes. Validações de referência/caller exclusivas do source são ignoradas nesse modo, enquanto a automação gerenciada continua sujeita às validações apropriadas ao target.
+
+Veja [`project-setup-shared-tool.md`](project-setup-shared-tool.md).
+
+## Automação de PR e promoções
+
+A automação de implementação segue o mesmo fluxo:
+
+```text
+branch de implementação -> develop -> Q.A -> main
+```
+
+PR Guardrails / validação de metadata estabelece o contexto do PR de implementação. PR Sync então sincroniza task e metadata do Project.
+
+Por padrão, PR Sync exclui PRs de promoção:
+
+- `develop -> Q.A`;
+- `Q.A -> main`.
+
+Assim um PR de promoção não herda labels, assignees, milestone, sub-issue ou Status de Project pertencentes a uma task de implementação.
+
+Veja [`pr-sync.pt-BR.md`](pr-sync.pt-BR.md).
 
 ## Nomenclatura
 

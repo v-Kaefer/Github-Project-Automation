@@ -5,6 +5,40 @@
   "projectDefinitionFile": "config/project/project-definition.json",
   "backlogManifestFile": "config/stories/backlog-manifest.json",
   "secretName": "PROJECT_SETUP_PAT",
+  "prAutomation": {
+    "sync": {
+      "enabled": true,
+      "syncLabels": true,
+      "labelPrefixes": [
+        "type:",
+        "priority:",
+        "test:"
+      ],
+      "syncMilestone": true,
+      "syncAssignees": true,
+      "assignAuthorWhenTaskUnassigned": true,
+      "linkSubissues": true,
+      "syncProject": true,
+      "skipPromotionPullRequests": true,
+      "promotionPaths": [
+        {
+          "head": "develop",
+          "base": "Q.A"
+        },
+        {
+          "head": "Q.A",
+          "base": "main"
+        }
+      ],
+      "projectStatusField": "Status",
+      "projectStatus": {
+        "draft": "In progress",
+        "review": "In review",
+        "closed": "In progress",
+        "merged": "Done"
+      }
+    }
+  },
   "defaults": {
     "dryRun": true,
     "runLabels": true,

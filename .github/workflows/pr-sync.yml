@@ -1,0 +1,67 @@
+---
+name: PR Sync
+
+"on":
+  pull_request_target:
+    types:
+      - converted_to_draft
+      - closed
+  workflow_run:
+    workflows: ["PR metadata validation", "PR guardrails"]
+    types: [completed]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    if: >-
+      (
+        github.event_name == 'pull_request_target' &&
+        github.event.pull_request.head.repo.full_name == github.repository
+      ) || (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'pull_request_target' &&
+        github.event.workflow_run.head_repository.full_name == github.repository &&
+        github.event.workflow_run.pull_requests[0].number != null
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout trusted base commit for direct PR lifecycle events
+        if: github.event_name == 'pull_request_target'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Checkout trusted base branch after PR guardrails
+        if: github.event_name == 'workflow_run'
+        uses: actions/checkout@v6
+        with:
+          ref: refs/heads/${{ github.event.workflow_run.pull_requests[0].base.ref }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Synchronize pull request context
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          PROJECT_SETUP_PAT: ${{ secrets.PROJECT_SETUP_PAT }}
+          PROJECT_SETUP_PROJECT_NUMBER: ${{ vars.PROJECT_SETUP_PROJECT_NUMBER }}
+          PROJECT_SETUP_OWNER_TYPE: ${{ vars.PROJECT_SETUP_OWNER_TYPE }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python -m project_setup.pr_sync \
+            --repo "$GITHUB_REPOSITORY" \
+            --event-path "$GITHUB_EVENT_PATH"

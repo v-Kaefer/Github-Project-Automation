@@ -26,6 +26,7 @@ CORE_REQUIRED_PATHS = (
     ".github/workflows/project-setup.yml",
     ".github/workflows/auto-label.yml",
     ".github/workflows/pr-metadata.yml",
+    ".github/workflows/pr-sync.yml",
     ".github/workflows/qa-source-branch.yml",
     ".github/workflows/main-source-branch.yml",
     "config/project/labels.json",
@@ -40,6 +41,7 @@ CORE_REQUIRED_PATHS = (
     "project_setup/runner.py",
     "project_setup/installer.py",
     "project_setup/github.py",
+    "project_setup/pr_sync.py",
     "scripts/validation/repo_quality.py",
     "scripts/validation/validate_pr_body.py",
 )
@@ -62,6 +64,7 @@ TOOL_REPOSITORY_REQUIRED_PATHS = (
     "tests/test_script_references.py",
     "tests/test_branch_promotion.py",
     "tests/test_qa_workflows.py",
+    "tests/test_pr_sync.py",
     "tests/qa/test_cli_e2e.py",
     "tests/qa/live_sandbox.py",
     "tests/qa/live_issue_generation.py",
