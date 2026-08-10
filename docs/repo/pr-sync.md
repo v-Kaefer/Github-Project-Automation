@@ -2,77 +2,158 @@
 
 ## Status
 
-This document defines the design contract for the planned **PR Sync** automation.
+**Implemented.**
 
-The `feat/pr-sync` branch was fast-forwarded to the current `main` baseline before this document was added. At this stage, the branch documents intended behavior only; PR Sync is not yet implemented.
+PR Sync is the generic GitHub Project Setup automation that keeps an implementation pull request aligned with its linked issue/task and, when configured, GitHub Projects v2.
 
-PR Sync is the generic GitHub Project Setup successor to the repository-specific workflow previously called **PR Hygiene** in the Take Your Pills reference repository.
+The implementation is composed of:
 
-## Purpose
+- `.github/workflows/pr-sync.yml` — trusted GitHub Actions orchestration;
+- `project_setup/pr_sync.py` — synchronization logic;
+- `project_setup.json` → `prAutomation.sync` — repository policy/configuration;
+- `tests/test_pr_sync.py` — unit and workflow-contract coverage.
 
-PR Sync keeps an implementation pull request and its linked GitHub work items aligned after PR Guardrails has resolved and validated the pull request context.
+The feature is the generic successor to the repository-specific workflow previously called **PR Hygiene** in the Take Your Pills reference repository. New GPA code and documentation use **PR Sync**.
 
-The intended execution order is:
+## Responsibility boundary
+
+PR Sync does not replace PR Guardrails.
+
+The intended pipeline is:
 
 ```text
 Pull request event
       |
       v
-PR Guardrails
-  - resolve context
-  - autofill resolvable metadata
+PR Guardrails / current PR metadata validation
+  - resolve or validate trusted PR context
   - validate branch/body contract
       |
       v
 PR Sync
-  - synchronize linked task/issue metadata
+  - resolve linked implementation task
+  - synchronize task -> PR metadata
   - synchronize parent/sub-issue relationship
-  - synchronize Project v2 membership and status
+  - synchronize task -> Project v2
+  - synchronize PR lifecycle -> Project Status
 ```
 
-PR Sync must not replace PR Guardrails. Guardrails establishes trusted context; PR Sync consumes that context and applies synchronization.
+The current GPA validation workflow is named `PR metadata validation`. PR Sync listens for successful completion of that workflow and also recognizes the reference-compatible `PR guardrails` workflow name so the orchestration remains valid when Guardrails is promoted to the generic name.
 
-## Planned responsibilities
+## Event model
 
-PR Sync is expected to support the following operations when enabled by repository configuration:
+Normal implementation updates run from `workflow_run` after the trusted PR validation/Guardrails workflow completes successfully.
 
-- resolve the implementation task from the PR closing reference (`Closes #N`, `Fixes #N`, or `Resolves #N`);
-- copy configured label families from the linked task to the pull request;
-- synchronize the pull request milestone with the linked task or resolved delivery context;
-- synchronize assignees when repository policy enables it;
-- ensure a task that declares a parent Story is linked as a GitHub sub-issue when possible;
-- add the linked task to the configured GitHub Project v2 when it is not already present;
-- synchronize the configured Project v2 status from the pull request lifecycle;
-- maintain one marked/sticky PR Sync status comment rather than creating duplicate comments.
+Lifecycle events that do not need another validation pass run directly from `pull_request_target`:
+
+- `converted_to_draft`;
+- `closed`.
+
+Both paths use automation from the trusted base branch. The workflow does not execute code from an untrusted PR head with write permissions.
+
+Fork pull requests are skipped.
+
+## Linked implementation task
+
+PR Sync resolves the implementation issue/task from a closing reference in the PR body:
+
+```text
+Closes #123
+Fixes #123
+Resolves #123
+```
+
+If no closing reference exists, PR Sync writes or updates one marked status comment and returns a failure for the synchronization step.
+
+If the referenced item is itself a pull request, it is rejected as an implementation task.
+
+The closing reference is also the GitHub Development linkage between the PR and the issue/task; PR Sync builds its synchronization context from that canonical link rather than inventing another parallel association.
+
+## Metadata synchronization
+
+By default, the linked task is the source for these PR fields:
+
+### Labels
+
+Configured label families are copied to the PR when missing.
+
+Default prefixes:
+
+```text
+type:
+priority:
+test:
+```
+
+PR Sync is additive: it does not remove unrelated or stale labels from the PR.
+
+### Milestone
+
+If the task has a milestone and the PR does not match it, the PR milestone is updated to the task milestone.
+
+### Assignees
+
+If task assignees exist, missing assignees are added to the PR.
+
+If the task is unassigned and `assignAuthorWhenTaskUnassigned` is enabled, the PR author is assigned to the task and then synchronized to the PR.
+
+These behaviors can be disabled independently in `project_setup.json`.
+
+## Parent Story / sub-issue synchronization
+
+Generated GPA task bodies already use a parent reference such as:
+
+```text
+Parent story: US-12 (#45)
+```
+
+When `linkSubissues` is enabled, PR Sync resolves that parent issue number and ensures the implementation task is linked as a GitHub sub-issue.
+
+Repeated execution is idempotent for an already-existing parent/sub-issue relationship. Permission failures are reported as synchronization diagnostics instead of causing duplicate mutations.
+
+## Project v2 synchronization
+
+When all of the following are configured:
+
+- `syncProject: true`;
+- Actions variable `PROJECT_SETUP_PROJECT_NUMBER`;
+- Actions secret `PROJECT_SETUP_PAT`;
+
+PR Sync ensures that the linked task belongs to the configured Project v2 and updates the configured single-select status field.
+
+The Project owner continues to use the existing GPA owner-resolution contract. `PROJECT_SETUP_OWNER_TYPE` may be provided as an Actions variable when explicit `user` or `organization` selection is required.
+
+If the Project number or PAT is missing, repository-level PR/task synchronization still runs and the sticky comment explains why Project synchronization was skipped.
 
 ## Default lifecycle mapping
 
-The generic default mapping should be configurable, but the initial contract is:
+The committed default mapping is:
 
 | Pull request state | Project status target |
 | --- | --- |
 | Draft / converted to draft | `In progress` |
-| Ready for review / open validated PR | `In review` |
+| Ready for review / validated open PR | `In review` |
 | Closed without merge | `In progress` |
 | Merged | `Done` |
 
-Repositories may use different option names. PR Sync must resolve configured aliases/options rather than hard-code a Take Your Pills-specific Project schema.
+The field name and option names are configurable. GPA resolves the configured option by normalized name rather than hard-coding one repository-specific Project schema.
 
 ## Promotion pull requests
 
-PR Sync is primarily intended for implementation pull requests. Promotion pull requests are infrastructure transitions:
+PR Sync is intended for implementation pull requests, not branch-promotion infrastructure.
+
+The default excluded paths are:
 
 ```text
-develop -> Q.A -> main
+develop -> Q.A
+Q.A -> main
 ```
 
-They must not be treated as implementation tasks by default. Unless a target repository explicitly enables release/promotion synchronization, PR Sync should skip task-level synchronization for these promotion paths.
+Promotion PRs are skipped before task lookup or metadata mutation. Repositories with a different promotion model can replace `promotionPaths` or disable `skipPromotionPullRequests`.
 
-This separation prevents a release promotion PR from accidentally inheriting labels, assignees, sub-issue relationships, or Project status intended for a single implementation task.
+## Committed configuration schema
 
-## Configuration direction
-
-The exact configuration schema will be finalized during implementation. The intended shape is equivalent to:
+`project_setup.json` contains the active PR Sync configuration:
 
 ```json
 {
@@ -80,11 +161,18 @@ The exact configuration schema will be finalized during implementation. The inte
     "sync": {
       "enabled": true,
       "syncLabels": true,
+      "labelPrefixes": ["type:", "priority:", "test:"],
       "syncMilestone": true,
       "syncAssignees": true,
+      "assignAuthorWhenTaskUnassigned": true,
       "linkSubissues": true,
       "syncProject": true,
       "skipPromotionPullRequests": true,
+      "promotionPaths": [
+        {"head": "develop", "base": "Q.A"},
+        {"head": "Q.A", "base": "main"}
+      ],
+      "projectStatusField": "Status",
       "projectStatus": {
         "draft": "In progress",
         "review": "In review",
@@ -96,85 +184,91 @@ The exact configuration schema will be finalized during implementation. The inte
 }
 ```
 
-This is a design example, not yet a committed configuration schema.
+This is now an implementation contract, not a design placeholder.
 
 ## Authentication and permissions
 
-Repository-scoped PR/issue synchronization should prefer the GitHub Actions token with the minimum required permissions. Project v2 operations may require `PROJECT_SETUP_PAT` depending on the repository owner, Project location, and token capabilities.
+Repository-scoped synchronization uses `${{ github.token }}` with the workflow's minimum repository permissions.
 
-The workflow must never expose PAT values in logs or comments.
+Project v2 synchronization uses the existing explicit GPA boundary:
 
-A failure to synchronize an optional surface such as Project v2 should produce a clear diagnostic and must not silently corrupt or overwrite unrelated PR metadata.
+```text
+PROJECT_SETUP_PAT
+```
+
+The PAT is never written to logs or comments.
+
+The workflow requests only:
+
+```yaml
+permissions:
+  contents: read
+  issues: write
+```
+
+PR labels, assignees, milestone changes and PR comments are performed through GitHub's issue endpoints because pull requests are issue-backed resources.
 
 ## Security model
 
-The planned workflow should use trusted automation definitions (`pull_request_target` or a trusted follow-up workflow) only when it does not execute untrusted pull-request code.
+PR Sync follows the repository hardening introduced in the promotion-gate work:
 
-PR Sync must:
+- privileged PR automation is based on `pull_request_target` / trusted `workflow_run`;
+- checkout points at the trusted base commit or trusted base branch;
+- `persist-credentials` is disabled;
+- fork PRs are rejected by both workflow conditions and implementation checks;
+- no untrusted head code is executed with write permissions;
+- GitHub mutation calls are not automatically replayed after transport failures;
+- optional Project permission failures are surfaced clearly.
 
-- check out trusted base-branch automation when code checkout is required;
-- avoid executing files from an untrusted PR head under elevated write permissions;
-- use minimum GitHub token permissions;
-- be idempotent for labels, milestone, assignees, Project membership, status, and sticky comments;
-- handle `403`/permission failures as explicit synchronization diagnostics rather than masking the original validation result with an unrelated traceback.
+The same source/embedded-repository distinction documented in `project-setup-shared-tool.md` continues to apply when the workflow is distributed to target repositories.
 
-## Relationship with existing GPA capabilities
+## Idempotency
 
-GitHub Project Setup already contains reusable lower-level operations that PR Sync can compose, including:
+Repeated PR Sync execution is designed not to duplicate:
 
-- issue and PR label handling;
-- milestone APIs;
-- sub-issue linking support;
-- Project v2 owner resolution;
-- Project item creation and field synchronization;
-- PR validation and marked validation comments.
+- labels already present on the PR;
+- assignees already present on the PR;
+- Project membership for an existing task;
+- parent/sub-issue relationships already established;
+- marked PR Sync comments.
 
-The PR Sync feature should reuse these primitives instead of duplicating GitHub API implementations.
+Milestone and Project status updates converge toward the configured task/lifecycle state.
 
-## Relationship with PR Guardrails
+## Installation
 
-PR Guardrails is responsible for determining what can be inferred safely before validation. PR Sync should run only after that stage has successfully established the PR context.
+`.github/workflows/pr-sync.yml` is part of the core installer manifest. Because package files under `project_setup/*.py` are distributed automatically, `project_setup/pr_sync.py` is installed with the workflow.
 
-A typical implementation PR should therefore become:
+Existing target files remain protected by the installer's normal preserve-by-default behavior.
 
-```text
-feat/US-12-example
-      |
-      v
-PR Guardrails
-  Story / task / milestone resolution
-  body autofill
-  validation
-      |
-      v
-PR Sync
-  task -> PR labels/milestone/assignee
-  Story <-> task relationship
-  task -> Project v2
-  PR lifecycle -> Project Status
-```
+## Validation
 
-## Validation requirements before promotion
+`tests/test_pr_sync.py` covers the reusable contract, including:
 
-Implementation of PR Sync must include automated coverage for at least:
+- closing-reference parsing;
+- generated parent-reference parsing;
+- lifecycle status mapping;
+- configuration overrides;
+- label/milestone/assignee synchronization;
+- author fallback for unassigned tasks;
+- duplicate parent/sub-issue idempotency;
+- fork safety;
+- promotion-PR skip behavior;
+- missing/invalid linked task behavior;
+- sticky comment idempotency;
+- trusted workflow checkout and dependency contract;
+- installer distribution of the workflow.
 
-- missing linked task;
-- linked item is a pull request instead of an issue/task;
-- existing versus missing labels;
-- milestone synchronization;
-- assignee synchronization and disabled-assignee mode;
-- parent/sub-issue already linked versus missing;
-- Project item already present versus missing;
-- Project status transitions for draft, review, closed, and merged states;
-- missing Project PAT or insufficient Project permission;
-- promotion PR skip behavior;
-- repeated execution without duplicate side effects;
-- same-repository and fork safety boundaries.
+Live Project v2 behavior remains a Q.A-sandbox concern. It must not use the source repository as the destructive integration-test target.
 
-Live Project v2 behavior should use the dedicated Q.A sandbox rather than the source repository.
+## Known limits
+
+- PR Sync adds configured task labels but does not remove stale PR labels.
+- It synchronizes assignees from task to PR; reviewer-request automation remains a Guardrails/review-policy responsibility rather than PR Sync.
+- Project v2 synchronization is optional when its PAT/Project number are not configured.
+- Promotion PR task synchronization is disabled by default.
 
 ## Naming
 
 The generic feature and workflow name is **PR Sync**.
 
-Do not use `PR Hygiene` in new GPA code, workflows, CLI commands, configuration, or documentation except when referring historically to the Take Your Pills implementation from which behavior was evaluated.
+Do not introduce `PR Hygiene` in new GPA code, workflows, CLI/configuration names, or documentation except when referring historically to the Take Your Pills reference implementation.
