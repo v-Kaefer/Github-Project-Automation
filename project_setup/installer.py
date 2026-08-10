@@ -18,6 +18,7 @@ CORE_TEMPLATE_FILES = (
     ".github/workflows/qa-source-branch.yml",
     ".github/workflows/main-source-branch.yml",
     ".github/workflows/pr-metadata.yml",
+    ".github/workflows/pr-sync.yml",
     ".github/workflows/project-setup.yml",
     "config/project/labels.json",
     "config/project/milestones.json",
