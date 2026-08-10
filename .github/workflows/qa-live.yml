@@ -24,7 +24,9 @@ jobs:
     name: qa-live-gate
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment: qa
+    environment:
+      name: qa
+      deployment: false
     steps:
       - name: Checkout guarded candidate
         uses: actions/checkout@v6
