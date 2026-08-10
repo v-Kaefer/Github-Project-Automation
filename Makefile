@@ -7,7 +7,8 @@ DETECTED_OS := POSIX
 endif
 
 PIP ?= $(PYTHON) -m pip
-TOOL_REPOSITORY := $(if $(wildcard tests/test_project_setup.py),1,0)
+SOURCE_MARKER := .project-setup-source
+TOOL_REPOSITORY := $(shell $(PYTHON) -c "from pathlib import Path; p=Path('$(SOURCE_MARKER)'); print(1 if p.is_file() and p.read_text(encoding='utf-8').strip() == 'github-project-setup-source' else 0)")
 REPOSITORY_MODE := $(if $(filter 1,$(TOOL_REPOSITORY)),tool-source,embedded-target)
 COMPILE_PATHS := project_setup scripts/validation $(if $(filter 1,$(TOOL_REPOSITORY)),tests,)
 
