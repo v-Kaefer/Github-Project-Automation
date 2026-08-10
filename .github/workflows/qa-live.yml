@@ -1,27 +1,37 @@
 name: Q.A live sandbox
 
 on:
-  push:
-    branches: ["Q.A"]
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      checkout_ref:
+        description: "Trusted same-repository ref that passed PR guardrails"
+        required: true
+        type: string
+      pr_number:
+        description: "Main-targeting pull request being validated"
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: qa-live-${{ vars.QA_REPOSITORY || 'unconfigured' }}
-  cancel-in-progress: false
+  group: qa-live-sandbox
+  cancel-in-progress: true
 
 jobs:
   live-sandbox:
     name: qa-live-gate
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment: qa
+    environment:
+      name: qa
+      deployment: false
     steps:
-      - name: Checkout
+      - name: Checkout guarded candidate
         uses: actions/checkout@v6
         with:
+          ref: ${{ inputs.checkout_ref }}
           persist-credentials: false
 
       - name: Set up Python
@@ -60,4 +70,4 @@ jobs:
         run: >-
           python tests/qa/live_sandbox.py
           --repo "$QA_REPOSITORY"
-          --run-id "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          --run-id "pr-${{ inputs.pr_number }}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
