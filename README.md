@@ -10,7 +10,7 @@
 
 `project_setup` is a self-contained toolkit for installing and operating reusable GitHub repository automation. It combines a Makefile, a Python CLI, GitHub Actions workflows, manifests, and validation scripts so repositories can be configured manually, through automation, or with AI assistance without hiding what will be changed.
 
-The project focuses on safe setup of labels, milestones, issues, sub-issues, pull-request guardrails, repository discovery, and GitHub Projects v2. Remote mutating commands default to dry-run and require an explicit live mode before writing to GitHub.
+The project focuses on safe setup of labels, milestones, issues, sub-issues, pull-request guardrails, **PR Sync**, repository discovery, and GitHub Projects v2. Remote mutating commands default to dry-run and require an explicit live mode before writing to GitHub.
 
 If an AI assistant will perform or guide the setup, give it [`AI_SETUP_GUIDE.md`](AI_SETUP_GUIDE.md). That file tells the agent to inspect existing repository conventions before asking questions, pause at manual/credential/live checkpoints, re-verify user changes before continuing, and avoid duplicate resources.
 
@@ -26,6 +26,7 @@ Typical uses include:
 - optionally link generated tasks as sub-issues;
 - create and synchronize GitHub Projects v2 owned by a personal account or GitHub Organization;
 - validate pull-request metadata and repository conventions;
+- synchronize implementation PRs with their linked tasks and optional Project v2 lifecycle state through PR Sync;
 - inspect a repository and recommend a setup flow before applying it;
 - expose the same operations to humans, scripts, and AI agents through predictable Make/CLI commands.
 
@@ -71,7 +72,7 @@ PROJECT_SETUP_CONFIG=project_setup.json
 PROJECT_SETUP_PROJECT_NUMBER=
 ```
 
-`PROJECT_SETUP_TARGET` is the local filesystem path. `GITHUB_REPOSITORY` is the GitHub `owner/repository` identifier. `PROJECT_SETUP_OWNER_TYPE` selects who owns GitHub Projects v2: use `user` for a personal account or `organization` for a company/team GitHub Organization. It may be left empty for authenticated auto-detection. Once a Project v2 exists, `PROJECT_SETUP_PROJECT_NUMBER` can store its number for `make project-sync`.
+`PROJECT_SETUP_TARGET` is the local filesystem path. `GITHUB_REPOSITORY` is the GitHub `owner/repository` identifier. `PROJECT_SETUP_OWNER_TYPE` selects who owns GitHub Projects v2: use `user` for a personal account or `organization` for a company/team GitHub Organization. It may be left empty for authenticated auto-detection. Once a Project v2 exists, `PROJECT_SETUP_PROJECT_NUMBER` can store its number for `make project-sync` and is also the value PR Sync expects as an Actions repository variable when Project synchronization is enabled.
 
 If the tool is already embedded in and operated from the target repository itself, use:
 
@@ -125,7 +126,7 @@ make setup TARGET=../other-project REPO=owner/other-project OWNER_TYPE=organizat
 | Repository operations inside GitHub Actions | `${{ github.token }}` exposed as `GITHUB_TOKEN` | [Automatic — no custom secret](#automatic-repository-token) |
 | Local labels, milestones, issues, comments, and similar repository operations | valid `gh auth`, `GITHUB_TOKEN`, `GH_TOKEN`, or `PROJECT_SETUP_PAT` | [Manual/configured](#local-authentication) |
 | Local GitHub Projects v2 | `PROJECT_SETUP_PAT` in `.env` | [Manual/configured PAT](#projects-v2-authentication) |
-| GitHub Projects v2 from Actions | repository secret `PROJECT_SETUP_PAT` | [Manual/configured PAT + secret](#projects-v2-authentication) |
+| GitHub Projects v2 from Actions / PR Sync | repository secret `PROJECT_SETUP_PAT` plus repository variable `PROJECT_SETUP_PROJECT_NUMBER` | [Manual/configured PAT + Actions configuration](#projects-v2-authentication) |
 
 ### Automatic repository token
 
@@ -168,9 +169,25 @@ PROJECT_SETUP_PAT=ghp_your_token_here
 
 For Actions: repository **Settings** → **Secrets and variables** → **Actions** → **New repository secret** → `PROJECT_SETUP_PAT`.
 
+When PR Sync should update Project v2, also create the Actions repository variable `PROJECT_SETUP_PROJECT_NUMBER` with the target Project number. `PROJECT_SETUP_OWNER_TYPE` may optionally be added as an Actions repository variable with `user` or `organization`; otherwise the existing authenticated owner auto-detection is used.
+
 Project owner type is independent from authentication. Configure `PROJECT_SETUP_OWNER_TYPE=user` or `PROJECT_SETUP_OWNER_TYPE=organization`, or leave it empty for auto-detection. See [Project v2 owner type](docs/repo/project-owner-type.md).
 
 Never commit `.env`. See GitHub's documentation for [personal access tokens](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) and [Projects automation](https://docs.github.com/en/issues/planning-and-tracking-with-projects/automating-your-project/automating-projects-using-actions).
+
+### PR Sync in installed repositories
+
+The core installer now includes `.github/workflows/pr-sync.yml` and the reusable `project_setup.pr_sync` module. PR Sync runs after successful trusted PR metadata/Guardrails validation and handles direct draft/closed lifecycle transitions without executing code from an untrusted PR head.
+
+For an implementation PR, use a closing reference in the PR body:
+
+```text
+Closes #123
+```
+
+The linked task can then drive configured PR labels, milestone and assignees, its parent/sub-issue relationship, and optional Project v2 lifecycle status. Repository-level synchronization uses `${{ github.token }}`. Project v2 synchronization is optional and requires the PAT/Project configuration described above. Promotion PRs `develop -> Q.A` and `Q.A -> main` are skipped by default.
+
+See [PR Sync](docs/repo/pr-sync.md) for the complete behavior and configuration contract.
 
 ## 4. Common commands
 
@@ -231,10 +248,11 @@ The tool is intentionally conservative because repository setup mixes local file
 - **No credential logging:** diagnostics show credential source/status, never token values.
 - **Safe HTTP behavior:** GitHub requests have a finite timeout and are restricted to `https://api.github.com`.
 - **Mutation retry protection:** automatic transport retries are limited to idempotent reads. A lost response after a `POST`, `PATCH`, or `DELETE` is not automatically replayed.
-- **Trusted privileged workflows:** workflows using `pull_request_target` execute automation from the trusted base branch. Read-only test workflows may validate proposed PR content.
+- **Trusted privileged workflows:** workflows using `pull_request_target` execute only trusted metadata/base automation. The `Q.A` and `main` promotion gates are metadata-only and never check out PR-head code; PR Sync checks out only the trusted base with credential persistence disabled.
+- **Explicit source identity:** `.project-setup-source` identifies this tool's source repository and is intentionally not installed into target repositories, preventing embedded targets from inheriting source-only validation contracts.
 - **Cross-platform entry points:** `.env` is parsed by Python rather than directly included by Make, keeping quoting and Windows behavior aligned with the CLI.
 
-Current intentional limits: generated issues are not idempotent yet, Project v2 views remain manual, rulesets/branch protection are not created, and milestone synchronization inspects at most the first 100 existing milestones.
+Current intentional limits: generated issues are not idempotent yet, Project v2 views remain manual, rulesets/branch protection are not created, milestone synchronization inspects at most the first 100 existing milestones, and PR Sync label synchronization is additive rather than destructive. PR Sync Project updates remain optional when their PAT/Project number are not configured.
 
 ## 6. Documentation
 
@@ -242,10 +260,11 @@ Current intentional limits: generated issues are not idempotent yet, Project v2 
 | --- | --- |
 | [AI setup guide](AI_SETUP_GUIDE.md) | Operational contract for AI assistants: inspect existing patterns first, ask only for unresolved decisions, pause for manual/credential/live checkpoints, re-verify user changes, and verify results after application. |
 | [Portuguese README](README.pt-BR.md) | Complete Portuguese version of this overview, quick start, authentication, commands, safety model, environment defaults, and licensing information. |
+| [PR Sync](docs/repo/pr-sync.md) | Implemented PR/task/Project synchronization contract, configuration, lifecycle mapping, promotion exclusions, security model, idempotency, and limits. |
 | [Project owner type](docs/repo/project-owner-type.md) | How to select `user` versus `organization`, auto-detection behavior, Make overrides, GraphQL namespace handling, and Q.A coverage. |
 | [Project Setup runbook (pt-BR)](docs/repo/project-setup-runbook.pt-BR.md) | Operational step-by-step procedure for configuring `.env`, diagnosing the environment, previewing, installing, and applying the tool in a target repository. |
-| [Shared tool internals](docs/repo/project-setup-shared-tool.md) | Distribution model, package/CLI boundaries, authentication boundary, request-safety decisions, and what the reusable core automates. |
-| [Branching policy](docs/repo/branching-policy.md) | Supported branch naming/source rules and the repository policy enforced around pull requests. |
+| [Shared tool internals](docs/repo/project-setup-shared-tool.md) | Distribution model, source/embedded boundary, package/CLI responsibilities, authentication boundary, request-safety decisions, and reusable automation internals. |
+| [Branching policy](docs/repo/branching-policy.md) | Supported branch naming/source rules, trusted metadata-only promotion gates, source marker behavior, and PR automation boundaries. |
 | [Project board policy](docs/repo/project-board-policy.md) | Expected Project v2 fields, statuses, item types, and conventions used by the generic manifests. |
 | [Script reference contract](docs/repo/script-reference-contract.md) | Contract that prevents validation scripts from becoming orphaned: each script must have an explicit caller and installer reference. |
 | [Documentation guide](docs/DOCUMENTATION-GUIDE.md) | Map connecting configuration files, workflows, implementation files, and their authoritative documentation. |
