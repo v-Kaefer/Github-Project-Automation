@@ -1,0 +1,2 @@
+Q.A pipeline smoke test for issue #47.
+This marker exists only to create a harmless end-to-end promotion candidate.
