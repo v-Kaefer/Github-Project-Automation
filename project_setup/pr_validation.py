@@ -9,6 +9,10 @@ from .github import GitHubClient
 
 VALIDATION_MARKER = "<!-- project-setup-pr-validation -->"
 BRANCH_PATTERN = re.compile(r"^(feat|fix|docs|refactor|test|hotfix|phase|task|chore|ci|release)/[a-z0-9._/-]+$")
+PROMOTION_PATHS = {
+    ("develop", "Q.A"),
+    ("Q.A", "main"),
+}
 REQUIRED_SECTIONS = (
     ("linked issue", "Linked Issue"),
     ("milestone", "Milestone"),
@@ -55,14 +59,13 @@ def meaningful(lines: list[str]) -> bool:
     return False
 
 
+def is_promotion_pull_request(branch: str | None, base_branch: str | None = None) -> bool:
+    return ((branch or "").strip(), (base_branch or "").strip()) in PROMOTION_PATHS
+
+
 def validate_branch(branch: str | None, base_branch: str | None = None) -> list[ValidationFinding]:
     normalized = (branch or "").strip()
-    base = (base_branch or "").strip()
-    promotion_paths = {
-        ("develop", "Q.A"),
-        ("Q.A", "main"),
-    }
-    if (normalized, base) in promotion_paths:
+    if is_promotion_pull_request(normalized, base_branch):
         return []
     if BRANCH_PATTERN.fullmatch(normalized.casefold()):
         return []
@@ -93,6 +96,8 @@ def validate_body(body: str | None) -> list[ValidationFinding]:
 
 
 def validate_pull_request(branch: str | None, body: str | None, base_branch: str | None = None) -> list[ValidationFinding]:
+    if is_promotion_pull_request(branch, base_branch):
+        return []
     return [*validate_branch(branch, base_branch), *validate_body(body)]
 
 
