@@ -2,77 +2,156 @@
 
 ## Status
 
-Este documento define o contrato de design da futura automação **PR Sync**.
+**Implementado.**
 
-A branch `feat/pr-sync` foi atualizada por fast-forward para o baseline atual de `main` antes da inclusão desta documentação. Neste estágio, a branch documenta o comportamento pretendido; a PR Sync ainda não está implementada.
+PR Sync é a automação genérica do GitHub Project Setup que mantém um pull request de implementação alinhado com sua issue/task vinculada e, quando configurado, com o GitHub Projects v2.
 
-PR Sync é o sucessor genérico, dentro do GitHub Project Setup, do workflow específico de repositório anteriormente chamado **PR Hygiene** no projeto de referência Take Your Pills.
+A implementação é composta por:
 
-## Objetivo
+- `.github/workflows/pr-sync.yml` — orquestração confiável no GitHub Actions;
+- `project_setup/pr_sync.py` — lógica de sincronização;
+- `project_setup.json` → `prAutomation.sync` — política/configuração do repositório;
+- `tests/test_pr_sync.py` — testes unitários e de contrato do workflow.
 
-PR Sync mantém um pull request de implementação e seus itens de trabalho vinculados no GitHub sincronizados depois que o PR Guardrails resolve e valida o contexto do PR.
+A funcionalidade é o sucessor genérico do workflow específico anteriormente chamado **PR Hygiene** no repositório de referência Take Your Pills. Novos códigos e documentos do GPA usam **PR Sync**.
 
-A ordem pretendida é:
+## Limite de responsabilidade
+
+PR Sync não substitui PR Guardrails.
+
+O pipeline esperado é:
 
 ```text
 Evento de pull request
       |
       v
-PR Guardrails
-  - resolve o contexto
-  - preenche metadata determinável
-  - valida branch/body
+PR Guardrails / validação atual de metadata do PR
+  - resolve ou valida o contexto confiável
+  - valida contrato de branch/body
       |
       v
 PR Sync
-  - sincroniza task/issue vinculada com o PR
+  - resolve a task de implementação vinculada
+  - sincroniza metadata task -> PR
   - sincroniza relação pai/sub-issue
-  - sincroniza Project v2 e status
+  - sincroniza task -> Project v2
+  - sincroniza ciclo do PR -> Status do Project
 ```
 
-PR Sync não substitui PR Guardrails. Guardrails estabelece o contexto confiável; PR Sync consome esse contexto e aplica a sincronização.
+O workflow atual do GPA chama-se `PR metadata validation`. PR Sync escuta sua conclusão com sucesso e também reconhece o nome compatível `PR guardrails`, permitindo a futura promoção do Guardrails ao nome genérico sem quebrar a orquestração.
 
-## Responsabilidades planejadas
+## Modelo de eventos
 
-Quando habilitada pela configuração do repositório, PR Sync deverá poder:
+Atualizações normais de implementação rodam via `workflow_run` depois que a validação confiável/Guardrails termina com sucesso.
 
-- resolver a task de implementação através de `Closes #N`, `Fixes #N` ou `Resolves #N`;
-- copiar famílias configuradas de labels da task para o PR;
-- sincronizar o milestone do PR com a task ou contexto de entrega resolvido;
-- sincronizar assignees quando permitido pela política do repositório;
-- garantir que uma task com Story pai seja vinculada como sub-issue quando possível;
-- adicionar a task ao GitHub Project v2 configurado quando ainda não estiver presente;
-- sincronizar o Status do Project v2 conforme o ciclo de vida do PR;
-- manter um único comentário marcado/sticky de PR Sync, sem duplicações.
+Eventos de ciclo de vida que não precisam de outra validação rodam diretamente por `pull_request_target`:
+
+- `converted_to_draft`;
+- `closed`.
+
+Os dois caminhos usam automação da base confiável. O workflow não executa código do head não confiável com permissões de escrita.
+
+PRs vindos de forks são ignorados.
+
+## Task de implementação vinculada
+
+PR Sync resolve a issue/task por uma referência de fechamento no body do PR:
+
+```text
+Closes #123
+Fixes #123
+Resolves #123
+```
+
+Se não houver referência, PR Sync cria ou atualiza um único comentário marcado de status e retorna falha para a etapa de sincronização.
+
+Se o item referenciado for outro pull request, ele é rejeitado como task de implementação.
+
+A própria referência de fechamento estabelece o vínculo Development do GitHub entre PR e issue/task. PR Sync usa esse vínculo canônico como contexto, em vez de criar uma associação paralela.
+
+## Sincronização de metadata
+
+Por padrão, a task vinculada é a fonte para estes campos do PR.
+
+### Labels
+
+Famílias configuradas de labels são copiadas quando estiverem ausentes.
+
+Prefixos padrão:
+
+```text
+type:
+priority:
+test:
+```
+
+A operação é aditiva: PR Sync não remove labels não relacionados ou antigos do PR.
+
+### Milestone
+
+Se a task possuir milestone diferente do PR, o milestone do PR é atualizado para o da task.
+
+### Assignees
+
+Assignees existentes na task são adicionados ao PR quando estiverem ausentes.
+
+Se a task estiver sem assignee e `assignAuthorWhenTaskUnassigned` estiver habilitado, o autor do PR é atribuído à task e então sincronizado com o PR.
+
+Cada comportamento pode ser desabilitado na configuração.
+
+## Story pai / sub-issue
+
+Tasks geradas pelo GPA já utilizam referência de pai, por exemplo:
+
+```text
+Parent story: US-12 (#45)
+```
+
+Com `linkSubissues` habilitado, PR Sync resolve o número da Story/issue pai e garante que a task seja vinculada como sub-issue.
+
+Execuções repetidas tratam relações já existentes como idempotentes. Falhas de permissão são apresentadas como diagnóstico, sem tentar duplicar a mutação.
+
+## Sincronização com Project v2
+
+Quando estão configurados:
+
+- `syncProject: true`;
+- variável de Actions `PROJECT_SETUP_PROJECT_NUMBER`;
+- secret de Actions `PROJECT_SETUP_PAT`;
+
+PR Sync garante que a task vinculada pertença ao Project v2 configurado e atualiza o campo single-select de status.
+
+A resolução de owner reutiliza o contrato já existente do GPA. `PROJECT_SETUP_OWNER_TYPE` pode ser fornecido como variável de Actions quando for necessário fixar `user` ou `organization`.
+
+Sem Project number ou PAT, a sincronização de PR/task dentro do repositório continua funcionando e o comentário sticky informa por que o Project foi ignorado.
 
 ## Mapeamento padrão do ciclo de vida
-
-O mapeamento deve ser configurável. O contrato inicial é:
 
 | Estado do PR | Status alvo no Project |
 | --- | --- |
 | Draft / convertido para draft | `In progress` |
-| Ready for review / PR aberto e validado | `In review` |
+| Ready for review / PR aberto validado | `In review` |
 | Fechado sem merge | `In progress` |
 | Merged | `Done` |
 
-Repositórios podem utilizar nomes de opções diferentes. PR Sync deve resolver aliases/opções configuradas em vez de depender de um schema específico do Take Your Pills.
+O nome do campo e das opções são configuráveis. O GPA resolve a opção pelo nome normalizado, sem depender de um schema específico do Take Your Pills.
 
-## Pull requests de promoção
+## PRs de promoção
 
-PR Sync é voltado principalmente a pull requests de implementação. PRs de promoção são transições de infraestrutura:
+PR Sync é voltado a PRs de implementação, não à infraestrutura de promoção de branches.
+
+Os caminhos ignorados por padrão são:
 
 ```text
-develop -> Q.A -> main
+develop -> Q.A
+Q.A -> main
 ```
 
-Por padrão eles não devem ser tratados como tasks de implementação. A menos que o repositório habilite explicitamente sincronização de release/promoção, PR Sync deve ignorar sincronizações de task nesses caminhos.
+Eles são ignorados antes da resolução de task ou qualquer mutação. Repositórios com outro modelo podem substituir `promotionPaths` ou desabilitar `skipPromotionPullRequests`.
 
-Isso impede que um PR de promoção herde labels, assignees, relações de sub-issue ou status de Project pertencentes a uma única task de implementação.
+## Schema de configuração consolidado
 
-## Direção de configuração
-
-O schema definitivo será fechado durante a implementação. O formato pretendido é equivalente a:
+`project_setup.json` agora contém o contrato ativo:
 
 ```json
 {
@@ -80,11 +159,18 @@ O schema definitivo será fechado durante a implementação. O formato pretendid
     "sync": {
       "enabled": true,
       "syncLabels": true,
+      "labelPrefixes": ["type:", "priority:", "test:"],
       "syncMilestone": true,
       "syncAssignees": true,
+      "assignAuthorWhenTaskUnassigned": true,
       "linkSubissues": true,
       "syncProject": true,
       "skipPromotionPullRequests": true,
+      "promotionPaths": [
+        {"head": "develop", "base": "Q.A"},
+        {"head": "Q.A", "base": "main"}
+      ],
+      "projectStatusField": "Status",
       "projectStatus": {
         "draft": "In progress",
         "review": "In review",
@@ -96,85 +182,91 @@ O schema definitivo será fechado durante a implementação. O formato pretendid
 }
 ```
 
-Este trecho é um exemplo de design e ainda não representa um schema de configuração consolidado.
+Esse bloco deixa de ser exemplo de design e passa a ser contrato de implementação.
 
 ## Autenticação e permissões
 
-Sincronizações de PR/issue restritas ao repositório devem preferir o GitHub Actions token com as permissões mínimas necessárias. Operações em Project v2 podem exigir `PROJECT_SETUP_PAT`, dependendo do owner, localização do Project e capacidades do token.
+Sincronizações restritas ao repositório usam `${{ github.token }}` com permissões mínimas.
 
-Valores de PAT nunca devem aparecer em logs ou comentários.
+Projects v2 preserva a fronteira explícita já usada pelo GPA:
 
-Falhas em superfícies opcionais, como Project v2, devem produzir diagnóstico claro e não podem sobrescrever ou corromper metadata não relacionada do PR.
+```text
+PROJECT_SETUP_PAT
+```
+
+O PAT nunca deve aparecer em logs ou comentários.
+
+O workflow solicita somente:
+
+```yaml
+permissions:
+  contents: read
+  issues: write
+```
+
+Labels, assignees, milestone e comentários de PR são tratados pelos endpoints de issues, pois PRs são recursos baseados em issues no GitHub.
 
 ## Modelo de segurança
 
-O workflow planejado deve usar automação confiável (`pull_request_target` ou workflow subsequente confiável) apenas quando não executar código não confiável do head do PR.
+PR Sync segue o hardening recente do repositório:
 
-PR Sync deve:
+- automação privilegiada usa `pull_request_target` / `workflow_run` confiável;
+- checkout aponta para commit/branch da base confiável;
+- `persist-credentials` fica desabilitado;
+- forks são bloqueados no workflow e novamente na implementação;
+- nenhum código do head não confiável roda com permissões de escrita;
+- mutações GitHub não são repetidas automaticamente após falhas de transporte;
+- falhas opcionais de permissão no Project são expostas claramente.
 
-- usar automação da base confiável quando checkout for necessário;
-- não executar arquivos do head não confiável com permissões elevadas;
-- usar o mínimo de permissões possível;
-- ser idempotente para labels, milestone, assignees, Project, status e comentários sticky;
-- tratar `403` e falhas de permissão como diagnóstico de sincronização, sem mascarar a causa original com traceback irrelevante.
+A distinção entre repositório-fonte e instalação embarcada descrita em `project-setup-shared-tool.md` continua válida ao distribuir o workflow.
 
-## Relação com capacidades já existentes no GPA
+## Idempotência
 
-O GPA já possui primitivas reutilizáveis que a PR Sync poderá compor, incluindo:
+Execuções repetidas não devem duplicar:
 
-- manipulação de labels em issues/PRs;
-- APIs de milestone;
-- suporte a sub-issues;
-- resolução do owner do Project v2;
-- criação de item e sincronização de campos no Project v2;
-- validação de PR e comentários marcados de validação.
+- labels já presentes;
+- assignees já presentes;
+- membership do Project para task já adicionada;
+- relação pai/sub-issue existente;
+- comentário marcado da PR Sync.
 
-A implementação deve reutilizar essas primitivas em vez de duplicar integrações com a API do GitHub.
+Milestone e Status do Project convergem para o estado configurado.
 
-## Relação com PR Guardrails
+## Instalação
 
-PR Guardrails é responsável por determinar o que pode ser inferido com segurança antes da validação. PR Sync deve rodar somente depois que esse estágio estabelecer com sucesso o contexto do PR.
+`.github/workflows/pr-sync.yml` faz parte do manifest core do instalador. Como módulos `project_setup/*.py` são distribuídos automaticamente, `project_setup/pr_sync.py` acompanha o workflow.
 
-Um PR típico deve seguir:
+Arquivos já existentes no target continuam protegidos pelo comportamento preserve-by-default do instalador.
 
-```text
-feat/US-12-exemplo
-      |
-      v
-PR Guardrails
-  resolução de Story / task / milestone
-  autofill do body
-  validação
-      |
-      v
-PR Sync
-  task -> labels/milestone/assignee do PR
-  Story <-> task
-  task -> Project v2
-  ciclo do PR -> Project Status
-```
+## Validação
 
-## Requisitos de validação antes da promoção
+`tests/test_pr_sync.py` cobre:
 
-A implementação da PR Sync deve conter cobertura automatizada para pelo menos:
+- parsing de closing reference;
+- parsing da referência de pai gerada;
+- mapeamento do ciclo de vida;
+- overrides de configuração;
+- sincronização de labels/milestone/assignees;
+- fallback de autor para task sem assignee;
+- idempotência de pai/sub-issue;
+- segurança para forks;
+- skip de PR de promoção;
+- task ausente/inválida;
+- idempotência do comentário sticky;
+- checkout confiável e dependência do workflow;
+- distribuição do workflow pelo instalador.
 
-- task vinculada ausente;
-- item vinculado é um PR em vez de issue/task;
-- labels já existentes e ausentes;
-- sincronização de milestone;
-- sincronização de assignee e modo desabilitado;
-- relação pai/sub-issue já existente e ausente;
-- item de Project já existente e ausente;
-- transições de status draft, review, closed e merged;
-- PAT de Project ausente ou permissão insuficiente;
-- comportamento de skip para PRs de promoção;
-- execução repetida sem efeitos duplicados;
-- limites de segurança para mesmo repositório e forks.
+Validação live de Project v2 continua pertencendo ao sandbox de Q.A, nunca ao repositório-fonte.
 
-Comportamentos live envolvendo Project v2 devem usar o sandbox dedicado de Q.A, nunca o repositório-fonte.
+## Limites conhecidos
+
+- PR Sync adiciona labels configuradas da task, mas não remove labels antigas do PR.
+- Sincronização de assignee pertence ao PR Sync; solicitação de reviewers permanece responsabilidade de Guardrails/review-policy.
+- Project v2 é opcional quando PAT/Project number não estiverem configurados.
+- Sincronização de task em PRs de promoção fica desabilitada por padrão.
 
 ## Nomenclatura
 
 O nome genérico da funcionalidade e do workflow é **PR Sync**.
 
-Não utilizar `PR Hygiene` em novos códigos, workflows, comandos CLI, configurações ou documentação do GPA, exceto em referências históricas ao comportamento avaliado no Take Your Pills.
+Não introduzir `PR Hygiene` em novos códigos, workflows, nomes de configuração/CLI ou documentação do GPA, exceto em referências históricas à implementação avaliada no Take Your Pills.
