@@ -7,6 +7,9 @@ DETECTED_OS := POSIX
 endif
 
 PIP ?= $(PYTHON) -m pip
+TOOL_REPOSITORY := $(if $(wildcard tests/test_project_setup.py),1,0)
+REPOSITORY_MODE := $(if $(filter 1,$(TOOL_REPOSITORY)),tool-source,embedded-target)
+COMPILE_PATHS := project_setup scripts/validation $(if $(filter 1,$(TOOL_REPOSITORY)),tests,)
 
 # Resolve persistent defaults through the same Python .env loader used by the CLI.
 # Only Make command-line variables override these values; unrelated process-level
@@ -15,6 +18,7 @@ ENV_TARGET := $(shell $(PYTHON) -c "from project_setup.github import load_env_fi
 ENV_REPO := $(shell $(PYTHON) -c "from project_setup.github import load_env_file; import os; load_env_file(); print(os.getenv('GITHUB_REPOSITORY', ''))")
 ENV_CONFIG := $(shell $(PYTHON) -c "from project_setup.github import load_env_file; import os; load_env_file(); print(os.getenv('PROJECT_SETUP_CONFIG', ''))")
 ENV_PROJECT_NUMBER := $(shell $(PYTHON) -c "from project_setup.github import load_env_file; import os; load_env_file(); print(os.getenv('PROJECT_SETUP_PROJECT_NUMBER', ''))")
+ENV_OWNER_TYPE := $(shell $(PYTHON) -c "from project_setup.github import load_env_file; import os; load_env_file(); print(os.getenv('PROJECT_SETUP_OWNER_TYPE', ''))")
 
 ifneq ($(origin TARGET),command line)
 TARGET := $(ENV_TARGET)
@@ -28,12 +32,19 @@ endif
 ifneq ($(origin PROJECT_NUMBER),command line)
 PROJECT_NUMBER := $(ENV_PROJECT_NUMBER)
 endif
+ifneq ($(origin OWNER_TYPE),command line)
+OWNER_TYPE := $(ENV_OWNER_TYPE)
+endif
 
 PROFILE ?= core
 PROJECT_TYPE ?=
 OWNER ?=
 FORCE ?= 0
 LIVE ?= 0
+
+# Make command-line OWNER_TYPE overrides the persistent .env value. Export it so
+# every Python entrypoint sees the same Project v2 ownership decision.
+export PROJECT_SETUP_OWNER_TYPE := $(OWNER_TYPE)
 
 WORKDIR := $(if $(strip $(TARGET)),$(TARGET),.)
 FORCE_FLAG := $(if $(filter 1 true yes on,$(FORCE)),--force,)
@@ -50,24 +61,27 @@ endef
 help:
 	@echo "GitHub Project Setup"
 	@echo "Detected environment: $(DETECTED_OS); Python command: $(PYTHON)"
+	@echo "Repository mode: $(REPOSITORY_MODE)"
 	@echo ""
 	@echo "Persistent defaults (.env):"
 	@echo "  PROJECT_SETUP_TARGET=$(if $(strip $(TARGET)),$(TARGET),missing)"
 	@echo "  GITHUB_REPOSITORY=$(if $(strip $(REPO)),$(REPO),missing)"
+	@echo "  PROJECT_SETUP_OWNER_TYPE=$(if $(strip $(OWNER_TYPE)),$(OWNER_TYPE),auto-detect)"
 	@echo "  PROJECT_SETUP_CONFIG=$(CONFIG)"
 	@echo "  PROJECT_SETUP_PROJECT_NUMBER=$(if $(strip $(PROJECT_NUMBER)),$(PROJECT_NUMBER),not-set)"
 	@echo ""
 	@echo "First-time local setup:"
 	@echo "  1. Copy .env.example to .env"
 	@echo "  2. Set PROJECT_SETUP_TARGET and GITHUB_REPOSITORY"
-	@echo "  3. Add PROJECT_SETUP_PAT when Project v2 operations are needed"
-	@echo "  4. Run make doctor"
-	@echo "  5. Run make check"
+	@echo "  3. Select PROJECT_SETUP_OWNER_TYPE=user or organization when using Project v2"
+	@echo "  4. Add PROJECT_SETUP_PAT when Project v2 operations are needed"
+	@echo "  5. Run make doctor"
+	@echo "  6. Run make check"
 	@echo ""
 	@echo "Development:"
 	@echo "  make install                         Install the CLI"
 	@echo "  make dev-install                     Install in editable mode"
-	@echo "  make check                           Validate committed files, compile and run tests"
+	@echo "  make check                           Validate managed files, compile and run the available test level"
 	@echo "  make doctor                          Inspect OS, .env, gh auth and configuration"
 	@echo "  make clean                           Remove local Python/build artifacts"
 	@echo ""
@@ -83,6 +97,12 @@ help:
 	@echo "  make setup                           Init + remote dry-run"
 	@echo "  make setup-live                      Init + live apply"
 	@echo ""
+	@echo "Project v2 owner selection:"
+	@echo "  PROJECT_SETUP_OWNER_TYPE=user        Personal GitHub account"
+	@echo "  PROJECT_SETUP_OWNER_TYPE=organization GitHub Organization/company"
+	@echo "  make setup OWNER_TYPE=organization   One-off override"
+	@echo "  Leave unset to auto-detect during authenticated Project v2 operations."
+	@echo ""
 	@echo "Individual operations (dry-run by default):"
 	@echo "  make labels"
 	@echo "  make milestones"
@@ -93,7 +113,7 @@ help:
 	@echo "  Add LIVE=1 only after reviewing the dry-run output."
 	@echo ""
 	@echo "One-off override example:"
-	@echo "  make setup TARGET=../other-project REPO=owner/other-repository"
+	@echo "  make setup TARGET=../other-project REPO=owner/other-repository OWNER_TYPE=organization"
 
 install:
 	@echo "==> Installing project_setup"
@@ -104,21 +124,26 @@ dev-install:
 	$(PIP) install -e .
 
 quality:
-	@echo "==> [1/3] Validating repository structure and committed files"
+	@echo "==> [1/3] Validating repository structure and committed files ($(REPOSITORY_MODE))"
 	$(PYTHON) scripts/validation/repo_quality.py
 
 compile:
-	@echo "==> [2/3] Compiling Python sources"
-	$(PYTHON) -m compileall -q project_setup scripts tests
+	@echo "==> [2/3] Compiling Python sources ($(REPOSITORY_MODE))"
+	$(PYTHON) -m compileall -q $(COMPILE_PATHS)
 	@$(MAKE) --no-print-directory clean-generated
 	@echo "Python compilation passed. Generated cache files were removed."
 
 test:
-	@echo "==> [3/3] Running unit tests"
+ifeq ($(TOOL_REPOSITORY),1)
+	@echo "==> [3/3] Running tool repository unit tests"
 	$(PYTHON) -B -m unittest discover -s tests -p "test_*.py" -v
+else
+	@echo "==> [3/3] Running embedded project_setup smoke test"
+	$(PYTHON) -B -c "import project_setup; from project_setup.cli import build_parser; parser = build_parser(); assert parser.prog == 'project-setup'; print('Embedded project_setup smoke test passed.')"
+endif
 
 check: quality compile test
-	@echo "All repository checks passed. No GitHub API changes were made."
+	@echo "All repository checks passed ($(REPOSITORY_MODE)). No GitHub API changes were made."
 
 doctor:
 	@echo "==> Inspecting local setup (read-only)"
@@ -153,7 +178,7 @@ setup-live:
 	$(call require_value,TARGET,set PROJECT_SETUP_TARGET in .env or use TARGET=../my-project)
 	$(call require_value,REPO,set GITHUB_REPOSITORY in .env or use REPO=owner/repository)
 	$(MAKE) --no-print-directory init TARGET="$(TARGET)" PROFILE="$(PROFILE)" FORCE="$(FORCE)"
-	$(MAKE) --no-print-directory apply TARGET="$(TARGET)" REPO="$(REPO)" CONFIG="$(CONFIG)" LIVE=1
+	$(MAKE) --no-print-directory apply TARGET="$(TARGET)" REPO="$(REPO)" CONFIG="$(CONFIG)" LIVE=1 OWNER_TYPE="$(OWNER_TYPE)"
 
 labels:
 	$(call require_value,TARGET,set PROJECT_SETUP_TARGET in .env or use TARGET=../my-project)

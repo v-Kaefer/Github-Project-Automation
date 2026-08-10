@@ -21,6 +21,7 @@ class MakefileEnvironmentDefaultTests(unittest.TestCase):
             "GITHUB_REPOSITORY",
             "PROJECT_SETUP_CONFIG",
             "PROJECT_SETUP_PROJECT_NUMBER",
+            "PROJECT_SETUP_OWNER_TYPE",
         ):
             environment.pop(name, None)
         environment["PROJECT_SETUP_ENV_FILE"] = str(env_file)
@@ -33,7 +34,8 @@ class MakefileEnvironmentDefaultTests(unittest.TestCase):
                 "PROJECT_SETUP_TARGET=../configured-target\n"
                 "GITHUB_REPOSITORY=owner/configured-repository\n"
                 "PROJECT_SETUP_CONFIG=custom/project_setup.json\n"
-                "PROJECT_SETUP_PROJECT_NUMBER=17\n",
+                "PROJECT_SETUP_PROJECT_NUMBER=17\n"
+                "PROJECT_SETUP_OWNER_TYPE=organization\n",
                 encoding="utf-8",
             )
             result = subprocess.run(
@@ -50,6 +52,7 @@ class MakefileEnvironmentDefaultTests(unittest.TestCase):
         self.assertIn("GITHUB_REPOSITORY=owner/configured-repository", result.stdout)
         self.assertIn("PROJECT_SETUP_CONFIG=custom/project_setup.json", result.stdout)
         self.assertIn("PROJECT_SETUP_PROJECT_NUMBER=17", result.stdout)
+        self.assertIn("PROJECT_SETUP_OWNER_TYPE=organization", result.stdout)
 
     def test_make_command_line_values_override_env_defaults(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -57,7 +60,8 @@ class MakefileEnvironmentDefaultTests(unittest.TestCase):
             env_file.write_text(
                 "PROJECT_SETUP_TARGET=../configured-target\n"
                 "GITHUB_REPOSITORY=owner/configured-repository\n"
-                "PROJECT_SETUP_PROJECT_NUMBER=17\n",
+                "PROJECT_SETUP_PROJECT_NUMBER=17\n"
+                "PROJECT_SETUP_OWNER_TYPE=user\n",
                 encoding="utf-8",
             )
             result = subprocess.run(
@@ -68,6 +72,7 @@ class MakefileEnvironmentDefaultTests(unittest.TestCase):
                     "TARGET=../override-target",
                     "REPO=owner/override-repository",
                     "PROJECT_NUMBER=23",
+                    "OWNER_TYPE=organization",
                 ],
                 cwd=ROOT,
                 env=self._base_environment(env_file),
@@ -80,6 +85,7 @@ class MakefileEnvironmentDefaultTests(unittest.TestCase):
         self.assertIn("PROJECT_SETUP_TARGET=../override-target", result.stdout)
         self.assertIn("GITHUB_REPOSITORY=owner/override-repository", result.stdout)
         self.assertIn("PROJECT_SETUP_PROJECT_NUMBER=23", result.stdout)
+        self.assertIn("PROJECT_SETUP_OWNER_TYPE=organization", result.stdout)
 
 
 if __name__ == "__main__":

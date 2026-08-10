@@ -15,6 +15,7 @@ CORE_TEMPLATE_FILES = (
     ".github/ISSUE_TEMPLATE/config.yml",
     ".github/pull_request_template.md",
     ".github/workflows/auto-label.yml",
+    ".github/workflows/qa-source-branch.yml",
     ".github/workflows/main-source-branch.yml",
     ".github/workflows/pr-metadata.yml",
     ".github/workflows/project-setup.yml",
