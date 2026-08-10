@@ -20,6 +20,7 @@ from project_setup.pr_sync import (
     sync_pr_metadata,
     upsert_sync_comment,
 )
+from project_setup.pr_validation import validate_pull_request
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -215,6 +216,11 @@ class PrSyncTests(unittest.TestCase):
         self.assertEqual(result, 0)
         client.get_issue.assert_not_called()
 
+    def test_promotion_pull_request_skips_implementation_metadata_body(self):
+        placeholder_body = "## Linked Issue\n- Closes #<issue-number>\n\n## Summary\n- <what changed and why>"
+        self.assertEqual(validate_pull_request("develop", placeholder_body, "Q.A"), [])
+        self.assertEqual(validate_pull_request("Q.A", placeholder_body, "main"), [])
+
     def test_missing_linked_task_sets_sticky_failure_comment(self):
         client = Mock(spec=GitHubClient)
         client.list_issue_comments.return_value = []
@@ -263,22 +269,21 @@ class PrSyncTests(unittest.TestCase):
 
 
 class PrSyncWorkflowContractTests(unittest.TestCase):
-    def test_workflow_uses_trusted_base_and_guardrail_completion(self):
+    def test_pr_sync_runs_directly_for_relevant_pr_lifecycle_events(self):
         text = (ROOT / ".github/workflows/pr-sync.yml").read_text(encoding="utf-8")
 
         for expected in (
             "name: PR Sync",
             "pull_request_target:",
+            "- opened",
+            "- synchronize",
+            "- reopened",
+            "- edited",
+            "- ready_for_review",
             "- converted_to_draft",
             "- closed",
-            "workflow_run:",
-            '"PR metadata validation"',
-            '"PR guardrails"',
-            "github.event.workflow_run.conclusion == 'success'",
             "github.event.pull_request.head.repo.full_name == github.repository",
-            "github.event.workflow_run.head_repository.full_name == github.repository",
             "ref: ${{ github.event.pull_request.base.sha }}",
-            "ref: refs/heads/${{ github.event.workflow_run.pull_requests[0].base.ref }}",
             "persist-credentials: false",
             "PROJECT_SETUP_PAT: ${{ secrets.PROJECT_SETUP_PAT }}",
             "PROJECT_SETUP_PROJECT_NUMBER: ${{ vars.PROJECT_SETUP_PROJECT_NUMBER }}",
@@ -287,8 +292,31 @@ class PrSyncWorkflowContractTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 self.assertIn(expected, text)
 
+        self.assertNotIn("workflow_run:", text)
+        self.assertNotIn('workflows: ["PR metadata validation", "PR guardrails"]', text)
         self.assertNotIn("github.event.pull_request.head.sha", text)
         self.assertNotIn("refs/heads/${{ github.event.pull_request.head.ref }}", text)
+
+    def test_metadata_validation_depends_on_successful_pr_sync(self):
+        text = (ROOT / ".github/workflows/pr-metadata.yml").read_text(encoding="utf-8")
+
+        for expected in (
+            "name: PR metadata validation",
+            "workflow_run:",
+            'workflows: ["PR Sync"]',
+            "github.event.workflow_run.conclusion == 'success'",
+            "github.event.workflow_run.event == 'pull_request_target'",
+            "github.event.workflow_run.pull_requests[0].number != null",
+            "pull-requests: read",
+            "ref: ${{ github.event.repository.default_branch }}",
+            "--skip-draft-or-closed",
+            "--pr-number \"$PR_NUMBER\"",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, text)
+
+        self.assertNotIn("pull_request_target:", text)
+        self.assertNotIn("PR_BODY:", text)
 
     def test_installer_distributes_pr_sync_workflow(self):
         text = (ROOT / "project_setup/installer.py").read_text(encoding="utf-8")
