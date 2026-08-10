@@ -38,6 +38,17 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Autofill recoverable pull request metadata
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python -m project_setup.pr_autofill \
+            --repo "$GITHUB_REPOSITORY" \
+            --event-path "$GITHUB_EVENT_PATH"
+
       - name: Synchronize pull request context
         env:
           GITHUB_TOKEN: ${{ github.token }}
