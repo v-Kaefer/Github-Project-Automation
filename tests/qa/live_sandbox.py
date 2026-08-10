@@ -14,22 +14,43 @@ from project_setup.milestones import sync_milestones
 from project_setup.project import create_project, list_project_fields, resolve_owner_type, sync_project
 
 
+QA_LABEL_PREFIX = "qa:run-"
+QA_MILESTONE_PREFIX = "QA-"
+QA_PROJECT_PREFIX = "QA validation "
+
+
 def write_json(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def project_by_title(client: GitHubClient, owner: str, title: str, owner_type: str) -> dict | None:
+def list_projects(client: GitHubClient, owner: str, owner_type: str) -> list[dict]:
     query = f"""
-    query($login:String!) {{
-      {owner_type}(login:$login) {{ projectsV2(first:100) {{ nodes {{ id number title url }} }} }}
+    query($login:String!, $cursor:String) {{
+      {owner_type}(login:$login) {{
+        projectsV2(first:100, after:$cursor) {{
+          pageInfo {{ hasNextPage endCursor }}
+          nodes {{ id number title url }}
+        }}
+      }}
     }}
     """
-    data = client.graphql(query, {"login": owner})
-    node = data.get(owner_type)
-    if not node:
-        return None
-    for project in node["projectsV2"]["nodes"]:
-        if project and project.get("title") == title:
+    projects: list[dict] = []
+    cursor = None
+    while True:
+        data = client.graphql(query, {"login": owner, "cursor": cursor})
+        node = data.get(owner_type)
+        if not node:
+            return projects
+        page = node["projectsV2"]
+        projects.extend(project for project in page["nodes"] if project)
+        if not page["pageInfo"]["hasNextPage"]:
+            return projects
+        cursor = page["pageInfo"]["endCursor"]
+
+
+def project_by_title(client: GitHubClient, owner: str, title: str, owner_type: str) -> dict | None:
+    for project in list_projects(client, owner, owner_type):
+        if project.get("title") == title:
             return project
     return None
 
@@ -80,6 +101,57 @@ def require_sandbox(repo: str) -> None:
             "QA_PROJECT_SETUP_PAT is missing. Configure it in the `qa` GitHub Environment; "
             "the workflow maps it to PROJECT_SETUP_PAT only for the live sandbox job."
         )
+
+
+def cleanup_stale_resources(
+    client: GitHubClient,
+    repo: str,
+    owner: str,
+    owner_type: str,
+    *,
+    keep_label: str,
+    keep_milestone: str,
+    keep_project: str,
+) -> list[str]:
+    """Delete only GPA-owned Q.A resources left by older interrupted runs."""
+    errors: list[str] = []
+    deleted = {"projects": 0, "milestones": 0, "labels": 0}
+
+    for project in list_projects(client, owner, owner_type):
+        title = str(project.get("title") or "")
+        if not title.startswith(QA_PROJECT_PREFIX) or title == keep_project:
+            continue
+        try:
+            delete_project(client, str(project["id"]))
+            deleted["projects"] += 1
+        except Exception as exc:
+            errors.append(f"stale project `{title}`: {exc}")
+
+    for milestone in client.paginated(f"{API_BASE}/repos/{repo}/milestones?state=all"):
+        title = str(milestone.get("title") or "")
+        if not title.startswith(QA_MILESTONE_PREFIX) or title == keep_milestone:
+            continue
+        try:
+            delete_milestone(client, repo, int(milestone["number"]))
+            deleted["milestones"] += 1
+        except Exception as exc:
+            errors.append(f"stale milestone `{title}`: {exc}")
+
+    for label in client.paginated(f"{API_BASE}/repos/{repo}/labels"):
+        name = str(label.get("name") or "")
+        if not name.startswith(QA_LABEL_PREFIX) or name == keep_label:
+            continue
+        try:
+            delete_label(client, repo, name)
+            deleted["labels"] += 1
+        except Exception as exc:
+            errors.append(f"stale label `{name}`: {exc}")
+
+    print(
+        "stale_cleanup="
+        f"projects:{deleted['projects']},milestones:{deleted['milestones']},labels:{deleted['labels']}"
+    )
+    return errors
 
 
 def cleanup_resources(
@@ -146,9 +218,9 @@ def main() -> int:
     owner, _ = split_repo(args.repo)
     owner_type = resolve_owner_type(client, owner)
     suffix = re.sub(r"[^A-Za-z0-9_.-]+", "-", args.run_id).strip("-")[:40] or "manual"
-    label_name = f"qa:run-{suffix}"
-    milestone_title = f"QA-{suffix}"
-    project_title = f"QA validation {suffix}"
+    label_name = f"{QA_LABEL_PREFIX}{suffix}"
+    milestone_title = f"{QA_MILESTONE_PREFIX}{suffix}"
+    project_title = f"{QA_PROJECT_PREFIX}{suffix}"
     created_project_id: str | None = None
     created_milestone_number: int | None = None
     primary_error: Exception | None = None
@@ -156,6 +228,18 @@ def main() -> int:
     print(f"sandbox_repository={args.repo}")
     print(f"sandbox_owner_type={owner_type}")
     print(f"qa_run_id={suffix}")
+
+    stale_errors = cleanup_stale_resources(
+        client,
+        args.repo,
+        owner,
+        owner_type,
+        keep_label=label_name,
+        keep_milestone=milestone_title,
+        keep_project=project_title,
+    )
+    if stale_errors:
+        raise RuntimeError("Q.A stale cleanup failed before creating new resources: " + "; ".join(stale_errors))
 
     try:
         with tempfile.TemporaryDirectory() as temporary_directory:
