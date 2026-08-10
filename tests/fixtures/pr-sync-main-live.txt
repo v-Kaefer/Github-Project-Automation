@@ -1,0 +1,2 @@
+Temporary live smoke-test marker for PR Sync after promotion to main.
+Issue: #25
