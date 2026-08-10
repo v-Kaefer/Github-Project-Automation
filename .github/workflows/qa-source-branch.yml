@@ -1,0 +1,42 @@
+name: Q.A source branch validation
+
+on:
+  pull_request:
+    branches: ["Q.A"]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qa-source-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate-qa-source:
+    name: validate-qa-source
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ensure PR to Q.A comes from develop
+        shell: bash
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          EXPECTED_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          echo "Base: $BASE_REF"
+          echo "Head: $HEAD_REPO:$HEAD_REF"
+          if [[ "$BASE_REF" != "Q.A" ]]; then
+            echo "This workflow only validates PRs targeting Q.A." >&2
+            exit 1
+          fi
+          if [[ "$HEAD_REPO" != "$EXPECTED_REPO" ]]; then
+            echo "PRs targeting Q.A must come from the same repository." >&2
+            exit 1
+          fi
+          if [[ "$HEAD_REF" != "develop" ]]; then
+            echo "PRs targeting Q.A must come from develop." >&2
+            exit 1
+          fi
