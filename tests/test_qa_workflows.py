@@ -55,6 +55,38 @@ class QaWorkflowContractTests(unittest.TestCase):
         self.assertIn("tests/qa/live_sandbox.py", text)
         self.assertIn("QA_REPOSITORY must not be the source repository", text)
 
+    def test_live_qa_is_reusable_only_and_guardrail_gated(self):
+        live = self.read(".github/workflows/qa-live.yml")
+        metadata = self.read(".github/workflows/pr-metadata.yml")
+
+        self.assertIn("workflow_call:", live)
+        self.assertNotIn("push:", live)
+        self.assertNotIn("workflow_dispatch:", live)
+        self.assertIn("group: qa-live-sandbox", live)
+        self.assertIn("cancel-in-progress: true", live)
+        self.assertIn("ref: ${{ inputs.checkout_ref }}", live)
+
+        self.assertIn("needs: validate-pr", metadata)
+        self.assertIn("needs.validate-pr.result == 'success'", metadata)
+        self.assertIn("pull_requests[0].head.ref == 'Q.A'", metadata)
+        self.assertIn("pull_requests[0].base.ref == 'main'", metadata)
+        self.assertIn("uses: ./.github/workflows/qa-live.yml", metadata)
+
+    def test_live_sandbox_prunes_only_prefixed_stale_resources(self):
+        text = self.read("tests/qa/live_sandbox.py")
+        for expected in (
+            'QA_LABEL_PREFIX = "qa:run-"',
+            'QA_MILESTONE_PREFIX = "QA-"',
+            'QA_PROJECT_PREFIX = "QA validation "',
+            "def cleanup_stale_resources(",
+            "title.startswith(QA_PROJECT_PREFIX)",
+            "title.startswith(QA_MILESTONE_PREFIX)",
+            "name.startswith(QA_LABEL_PREFIX)",
+            "Q.A stale cleanup failed before creating new resources",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, text)
+
     def test_issue_generation_is_manual_and_requires_explicit_confirmation(self):
         text = self.read(".github/workflows/qa-issue-generation.yml")
         self.assertIn("workflow_dispatch", text)
