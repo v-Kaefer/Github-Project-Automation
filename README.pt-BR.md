@@ -10,7 +10,7 @@
 
 O `project_setup` é uma ferramenta autocontida para instalar e operar automações reutilizáveis em repositórios GitHub. Ela combina Makefile, CLI Python, workflows do GitHub Actions, manifests e scripts de validação para que repositórios possam ser configurados manualmente, por automação ou com auxílio de IA sem esconder o que será alterado.
 
-O foco é configurar com segurança labels, milestones, issues, sub-issues, guardrails de pull request, descoberta de repositório e GitHub Projects v2. Comandos remotos mutáveis usam dry-run por padrão e exigem modo live explícito antes de escrever no GitHub.
+O foco é configurar com segurança labels, milestones, issues, sub-issues, guardrails de pull request, **PR Sync**, descoberta de repositório e GitHub Projects v2. Comandos remotos mutáveis usam dry-run por padrão e exigem modo live explícito antes de escrever no GitHub.
 
 Se uma IA for realizar ou conduzir o setup, forneça a ela o arquivo [`AI_SETUP_GUIDE.md`](AI_SETUP_GUIDE.md). Esse guia orienta o agente a inspecionar padrões existentes antes de perguntar, parar em checkpoints manuais/de credenciais/live, verificar novamente alterações feitas pelo usuário e evitar criação duplicada de recursos.
 
@@ -26,6 +26,7 @@ Usos típicos:
 - opcionalmente vincular tasks como sub-issues;
 - criar e sincronizar GitHub Projects v2 pertencentes a uma conta pessoal ou GitHub Organization;
 - validar metadados de pull request e convenções do repositório;
+- sincronizar PRs de implementação com suas tasks vinculadas e, opcionalmente, com o ciclo de vida no Project v2 através da PR Sync;
 - inspecionar um projeto e recomendar um fluxo de setup antes de aplicar alterações;
 - disponibilizar as mesmas operações para pessoas, scripts e agentes de IA através de comandos previsíveis em Make/CLI.
 
@@ -71,7 +72,7 @@ PROJECT_SETUP_CONFIG=project_setup.json
 PROJECT_SETUP_PROJECT_NUMBER=
 ```
 
-`PROJECT_SETUP_TARGET` é o caminho local no sistema de arquivos. `GITHUB_REPOSITORY` é o identificador `owner/repository` no GitHub. `PROJECT_SETUP_OWNER_TYPE` seleciona quem é o proprietário do GitHub Projects v2: use `user` para uma conta pessoal ou `organization` para uma empresa/equipe representada por GitHub Organization. Ele pode ficar vazio para autodetecção durante operações autenticadas. Quando um Project v2 já existir, `PROJECT_SETUP_PROJECT_NUMBER` pode guardar o número utilizado por `make project-sync`.
+`PROJECT_SETUP_TARGET` é o caminho local no sistema de arquivos. `GITHUB_REPOSITORY` é o identificador `owner/repository` no GitHub. `PROJECT_SETUP_OWNER_TYPE` seleciona quem é o proprietário do GitHub Projects v2: use `user` para uma conta pessoal ou `organization` para uma empresa/equipe representada por GitHub Organization. Ele pode ficar vazio para autodetecção durante operações autenticadas. Quando um Project v2 já existir, `PROJECT_SETUP_PROJECT_NUMBER` pode guardar o número utilizado por `make project-sync` e também é o valor que a PR Sync espera como variável de repositório do Actions quando a sincronização de Project estiver habilitada.
 
 Se a ferramenta já estiver incorporada no próprio repositório-alvo e for executada de dentro dele, use:
 
@@ -125,7 +126,7 @@ make setup TARGET=../outro-projeto REPO=owner/outro-projeto OWNER_TYPE=organizat
 | Operações do próprio repositório dentro do GitHub Actions | `${{ github.token }}` exposto como `GITHUB_TOKEN` | [Automático — sem secret personalizado](#token-automático-do-repositório) |
 | Labels, milestones, issues, comentários e operações similares executadas localmente | `gh auth` válido, `GITHUB_TOKEN`, `GH_TOKEN` ou `PROJECT_SETUP_PAT` | [Manual/configurado](#autenticação-local) |
 | GitHub Projects v2 localmente | `PROJECT_SETUP_PAT` no `.env` | [PAT manual/configurada](#autenticação-do-projects-v2) |
-| GitHub Projects v2 pelo Actions | secret de repositório `PROJECT_SETUP_PAT` | [PAT + secret manual/configurado](#autenticação-do-projects-v2) |
+| GitHub Projects v2 pelo Actions / PR Sync | secret de repositório `PROJECT_SETUP_PAT` mais variável de repositório `PROJECT_SETUP_PROJECT_NUMBER` | [PAT + configuração do Actions](#autenticação-do-projects-v2) |
 
 ### Token automático do repositório
 
@@ -168,9 +169,25 @@ PROJECT_SETUP_PAT=ghp_seu_token_aqui
 
 Para Actions: **Settings** do repositório → **Secrets and variables** → **Actions** → **New repository secret** → `PROJECT_SETUP_PAT`.
 
+Quando a PR Sync também deve atualizar o Project v2, crie a variável de repositório do Actions `PROJECT_SETUP_PROJECT_NUMBER` com o número do Project. `PROJECT_SETUP_OWNER_TYPE` pode opcionalmente ser criada como variável de Actions com `user` ou `organization`; sem ela, permanece a autodetecção autenticada existente.
+
 O tipo do owner é independente da autenticação. Configure `PROJECT_SETUP_OWNER_TYPE=user` ou `PROJECT_SETUP_OWNER_TYPE=organization`, ou deixe vazio para autodetecção. Consulte [Tipo de proprietário do Project v2](docs/repo/project-owner-type.pt-BR.md).
 
 Nunca versione o `.env`. Consulte a documentação do GitHub sobre [personal access tokens](https://docs.github.com/pt/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) e [automação de Projects](https://docs.github.com/pt/issues/planning-and-tracking-with-projects/automating-your-project/automating-projects-using-actions).
+
+### PR Sync em repositórios instalados
+
+O instalador core agora inclui `.github/workflows/pr-sync.yml` e o módulo reutilizável `project_setup.pr_sync`. A PR Sync roda após a validação confiável de metadata/Guardrails e trata diretamente transições de draft/closed sem executar código do head não confiável do PR.
+
+Em um PR de implementação, use uma referência de fechamento no body:
+
+```text
+Closes #123
+```
+
+A task vinculada pode então fornecer as famílias configuradas de labels, milestone e assignees do PR, a relação pai/sub-issue e, opcionalmente, o Status no Project v2. A sincronização dentro do repositório usa `${{ github.token }}`. A parte de Project v2 é opcional e exige a configuração de PAT/Project descrita acima. PRs de promoção `develop -> Q.A` e `Q.A -> main` são ignorados por padrão.
+
+Consulte [PR Sync](docs/repo/pr-sync.pt-BR.md) para o contrato completo de comportamento e configuração.
 
 ## 4. Comandos principais
 
@@ -231,10 +248,11 @@ A ferramenta é deliberadamente conservadora porque o setup mistura arquivos loc
 - **Sem log de credenciais:** os diagnósticos mostram origem/estado, nunca o valor dos tokens.
 - **HTTP restrito:** as chamadas têm timeout finito e ficam restritas a `https://api.github.com`.
 - **Proteção contra repetição de mutações:** retentativas automáticas de transporte ficam limitadas a leituras idempotentes. Uma resposta perdida após `POST`, `PATCH` ou `DELETE` não provoca replay automático.
-- **Workflows privilegiados confiáveis:** workflows com `pull_request_target` executam automação da branch-base confiável. Workflows de teste somente leitura podem validar o conteúdo proposto pelo PR.
+- **Workflows privilegiados confiáveis:** workflows com `pull_request_target` executam somente metadata/automação da base confiável. Os gates de promoção para `Q.A` e `main` são metadata-only e nunca fazem checkout do head do PR; a PR Sync faz checkout somente da base confiável com persistência de credenciais desabilitada.
+- **Identidade explícita do source:** `.project-setup-source` identifica o repositório-fonte desta ferramenta e não é instalado em targets, evitando que repositórios embarcados herdem contratos de validação exclusivos do source.
 - **Entrada multiplataforma:** o `.env` é interpretado pelo Python, em vez de ser incluído diretamente pelo Make, mantendo aspas e comportamento no Windows alinhados com a CLI.
 
-Limitações intencionais atuais: geração de issues ainda não é idempotente, views do Project v2 continuam manuais, rulesets/branch protection não são criados e a sincronização de milestones consulta no máximo os primeiros 100 milestones existentes.
+Limitações intencionais atuais: geração de issues ainda não é idempotente, views do Project v2 continuam manuais, rulesets/branch protection não são criados, a sincronização de milestones consulta no máximo os primeiros 100 milestones existentes e a sincronização de labels pela PR Sync é aditiva, não destrutiva. Atualizações de Project pela PR Sync continuam opcionais quando PAT/número do Project não estiverem configurados.
 
 ## 6. Documentação
 
@@ -242,10 +260,11 @@ Limitações intencionais atuais: geração de issues ainda não é idempotente,
 | --- | --- |
 | [Guia de setup para IA](AI_SETUP_GUIDE.md) | Contrato operacional para agentes de IA: consultar padrões existentes primeiro, perguntar apenas decisões pendentes, parar em checkpoints manuais/de credenciais/live, verificar novamente mudanças do usuário e validar resultados após a aplicação. |
 | [README em inglês](README.md) | Versão principal internacional com visão geral, quick start, autenticação, comandos, segurança, defaults de ambiente e licença. |
+| [PR Sync](docs/repo/pr-sync.pt-BR.md) | Contrato implementado de sincronização PR/task/Project, configuração, mapeamento de ciclo de vida, exclusões de promoção, segurança, idempotência e limites. |
 | [Tipo de proprietário do Project v2](docs/repo/project-owner-type.pt-BR.md) | Como selecionar `user` ou `organization`, autodetecção, overrides no Make, tratamento do namespace GraphQL e cobertura de Q.A. |
 | [Runbook do Project Setup](docs/repo/project-setup-runbook.pt-BR.md) | Procedimento operacional passo a passo para configurar `.env`, diagnosticar, simular, instalar e aplicar a ferramenta em outro repositório. |
-| [Internos da ferramenta compartilhada](docs/repo/project-setup-shared-tool.md) | Modelo de distribuição, limites do pacote/CLI, fronteira de autenticação, decisões de segurança HTTP e escopo do core reutilizável. |
-| [Política de branches](docs/repo/branching-policy.pt-BR.md) | Convenções de nomes/origens de branches e regras esperadas para pull requests. |
+| [Internos da ferramenta compartilhada](docs/repo/project-setup-shared-tool.md) | Modelo de distribuição, fronteira source/embedded, responsabilidades do pacote/CLI, autenticação, segurança de requests e internos da automação reutilizável. |
+| [Política de branches](docs/repo/branching-policy.pt-BR.md) | Convenções de nomes/origens, gates confiáveis metadata-only, comportamento do marker do source e limites da automação de PR. |
 | [Política do Project board](docs/repo/project-board-policy.pt-BR.md) | Fields, statuses, tipos de item e convenções esperadas pelo Project v2 e pelos manifests genéricos. |
 | [Contrato de referências de scripts](docs/repo/script-reference-contract.pt-BR.md) | Regra que evita scripts órfãos: todo script precisa ter chamador explícito e referência no instalador. |
 | [Guia da documentação](docs/DOCUMENTATION-GUIDE.md) | Mapa entre arquivos de configuração, workflows, implementações e documentação autoritativa. |
