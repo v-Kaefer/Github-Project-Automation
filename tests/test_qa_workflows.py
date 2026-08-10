@@ -46,9 +46,11 @@ class QaWorkflowContractTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 self.assertIn(expected, text)
 
-    def test_live_workflow_uses_protected_environment_and_dedicated_credentials(self):
+    def test_live_workflow_uses_protected_environment_without_deployment_records(self):
         text = self.read(".github/workflows/qa-live.yml")
-        self.assertIn("environment: qa", text)
+        self.assertIn("environment:", text)
+        self.assertIn("name: qa", text)
+        self.assertIn("deployment: false", text)
         self.assertIn("name: qa-live-gate", text)
         self.assertIn("vars.QA_REPOSITORY", text)
         self.assertIn("secrets.QA_PROJECT_SETUP_PAT", text)
@@ -86,6 +88,26 @@ class QaWorkflowContractTests(unittest.TestCase):
         ):
             with self.subTest(expected=expected):
                 self.assertIn(expected, text)
+
+    def test_old_qa_deployment_history_is_cleaned_after_live_qa(self):
+        metadata = self.read(".github/workflows/pr-metadata.yml")
+        cleanup = self.read("tests/qa/cleanup_deployments.py")
+
+        for expected in (
+            "qa-deployment-cleanup:",
+            "needs: qa-live",
+            "always()",
+            "deployments: write",
+            "tests/qa/cleanup_deployments.py",
+            "--environment qa",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, metadata)
+
+        self.assertIn("/deployments?environment=", cleanup)
+        self.assertIn('"state": "inactive"', cleanup)
+        self.assertIn('"DELETE"', cleanup)
+        self.assertIn("--environment must be exactly 'qa'", cleanup)
 
     def test_issue_generation_is_manual_and_requires_explicit_confirmation(self):
         text = self.read(".github/workflows/qa-issue-generation.yml")
