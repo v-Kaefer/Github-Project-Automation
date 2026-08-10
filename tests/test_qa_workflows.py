@@ -13,12 +13,16 @@ class QaWorkflowContractTests(unittest.TestCase):
 
     def test_qa_source_requires_develop(self):
         text = self.read(".github/workflows/qa-source-branch.yml")
+        self.assertIn("pull_request_target:", text)
+        self.assertNotIn("actions/checkout", text)
         self.assertIn('branches: ["Q.A"]', text)
         self.assertIn('HEAD_REF" != "develop', text)
         self.assertIn("name: validate-qa-source", text)
 
     def test_main_source_requires_qa(self):
         text = self.read(".github/workflows/main-source-branch.yml")
+        self.assertIn("pull_request_target:", text)
+        self.assertNotIn("actions/checkout", text)
         self.assertIn('HEAD_REF" != "Q.A', text)
         self.assertNotIn('HEAD_REF" != "develop', text)
         self.assertIn("name: validate-main-source", text)

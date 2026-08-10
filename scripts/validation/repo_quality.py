@@ -10,7 +10,8 @@ import tomllib
 
 SELF = Path(__file__).resolve()
 ROOT = SELF.parents[2]
-TOOL_REPOSITORY_MARKER = "tests/test_project_setup.py"
+TOOL_REPOSITORY_MARKER = ".project-setup-source"
+TOOL_REPOSITORY_MARKER_VALUE = "github-project-setup-source"
 
 # Files that are part of the reusable embedded project_setup contract.
 CORE_REQUIRED_PATHS = (
@@ -45,6 +46,7 @@ CORE_REQUIRED_PATHS = (
 
 # Files that exist only in the source repository of GitHub Project Setup.
 TOOL_REPOSITORY_REQUIRED_PATHS = (
+    TOOL_REPOSITORY_MARKER,
     "README.md",
     "README.pt-BR.md",
     "LICENSE",
@@ -102,7 +104,11 @@ def fail(message: str, failures: list[str], fix: str | None = None) -> None:
 
 
 def is_tool_repository() -> bool:
-    return (ROOT / TOOL_REPOSITORY_MARKER).is_file()
+    marker = ROOT / TOOL_REPOSITORY_MARKER
+    try:
+        return marker.is_file() and marker.read_text(encoding="utf-8").strip() == TOOL_REPOSITORY_MARKER_VALUE
+    except OSError:
+        return False
 
 
 def tracked_files(failures: list[str]) -> list[Path]:
@@ -158,8 +164,8 @@ def validate_script_references(failures: list[str], *, strict_repository_scan: b
     installer_text = read_text(INSTALLER_MANIFEST, failures)
     registered_scripts = set(SCRIPT_REFERENCES)
 
-    # Only the tool's own source repository owns every script under scripts/. A
-    # target repository may legitimately have unrelated scripts of its own.
+    # Only the tool's own source repository owns every script and caller under
+    # scripts/. Embedded targets may preserve their own Makefile/workflows.
     if strict_repository_scan:
         discovered_scripts = {
             path.relative_to(ROOT).as_posix()
@@ -190,18 +196,21 @@ def validate_script_references(failures: list[str], *, strict_repository_scan: b
             continue
 
         print(f"script={script_path} exists=yes")
-        for owner in owners:
-            owner_text = read_text(owner, failures)
-            if owner_text is None:
-                continue
-            if script_path not in owner_text:
-                fail(
-                    f"{owner} no longer references {script_path}",
-                    failures,
-                    f"Restore the `{script_path}` invocation in {owner} or update SCRIPT_REFERENCES intentionally.",
-                )
-            else:
-                print(f"  referenced_by={owner} status=ok")
+        if strict_repository_scan:
+            for owner in owners:
+                owner_text = read_text(owner, failures)
+                if owner_text is None:
+                    continue
+                if script_path not in owner_text:
+                    fail(
+                        f"{owner} no longer references {script_path}",
+                        failures,
+                        f"Restore the `{script_path}` invocation in {owner} or update SCRIPT_REFERENCES intentionally.",
+                    )
+                else:
+                    print(f"  referenced_by={owner} status=ok")
+        else:
+            print("  caller_contracts=skipped status=embedded-target-preserved-files")
 
         if installer_text is not None:
             if script_path not in installer_text:
