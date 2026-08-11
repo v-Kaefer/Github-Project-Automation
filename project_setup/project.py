@@ -170,17 +170,70 @@ def create_field(client: GitHubClient, project_id: str, field: dict) -> None:
     raise ValueError(f"Unsupported project field type: {field_type}")
 
 
+def single_select_option_inputs(existing_field: dict, desired_field: dict) -> list[dict]:
+    existing_by_name = {
+        str(option.get("name") or "").casefold(): option
+        for option in existing_field.get("options", [])
+        if option.get("name")
+    }
+    result: list[dict] = []
+    for desired_name in desired_field.get("options", []):
+        option = {"name": str(desired_name), "color": "GRAY", "description": ""}
+        current = existing_by_name.get(str(desired_name).casefold())
+        if current and current.get("id"):
+            option["id"] = str(current["id"])
+        result.append(option)
+    return result
+
+
+def update_single_select_field(client: GitHubClient, existing_field: dict, desired_field: dict) -> None:
+    mutation = """
+    mutation($field:ID!, $options:[ProjectV2SingleSelectFieldOptionInput!]!) {
+      updateProjectV2Field(input:{fieldId:$field,singleSelectOptions:$options}) {
+        projectV2Field { ... on ProjectV2SingleSelectField { id } }
+      }
+    }
+    """
+    client.graphql(
+        mutation,
+        {
+            "field": existing_field["id"],
+            "options": single_select_option_inputs(existing_field, desired_field),
+        },
+    )
+
+
+def single_select_options_match(existing_field: dict, desired_field: dict) -> bool:
+    existing_names = [str(option.get("name") or "") for option in existing_field.get("options", [])]
+    desired_names = [str(option) for option in desired_field.get("options", [])]
+    return existing_names == desired_names
+
+
 def ensure_fields(client: GitHubClient, project_id: str, definition: dict, dry_run: bool = False) -> dict[str, dict]:
     existing = {field["name"]: field for field in list_project_fields(client, project_id) if field.get("name")}
+    changed = False
     for field in definition.get("fields", []):
-        if field["name"] in existing:
+        existing_field = existing.get(field["name"])
+        if existing_field:
+            if (
+                field.get("type") == "single_select"
+                and existing_field.get("__typename") == "ProjectV2SingleSelectField"
+                and not single_select_options_match(existing_field, field)
+            ):
+                if dry_run:
+                    print(f"[DRY-RUN] Would update field options: {field['name']}")
+                else:
+                    update_single_select_field(client, existing_field, field)
+                    changed = True
+                    print(f"updated field options: {field['name']}")
             continue
         if dry_run:
             print(f"[DRY-RUN] Would create field: {field['name']} ({field['type']})")
         else:
             create_field(client, project_id, field)
+            changed = True
             print(f"created field: {field['name']}")
-    if dry_run:
+    if dry_run or not changed:
         return existing
     return {field["name"]: field for field in list_project_fields(client, project_id) if field.get("name")}
 
