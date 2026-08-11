@@ -55,6 +55,7 @@ class QaWorkflowContractTests(unittest.TestCase):
         self.assertIn("vars.QA_REPOSITORY", text)
         self.assertIn("secrets.QA_PROJECT_SETUP_PAT", text)
         self.assertIn("tests/qa/live_sandbox.py", text)
+        self.assertIn("tests/qa/live_pr_sync.py", text)
         self.assertIn("QA_REPOSITORY must not be the source repository", text)
 
     def test_live_qa_is_reusable_only_and_guardrail_gated(self):
@@ -89,6 +90,28 @@ class QaWorkflowContractTests(unittest.TestCase):
         ):
             with self.subTest(expected=expected):
                 self.assertIn(expected, text)
+
+    def test_live_pr_sync_verifies_structured_metadata_on_non_default_base(self):
+        text = self.read("tests/qa/live_pr_sync.py")
+        workflow = self.read(".github/workflows/qa-live.yml")
+
+        for expected in (
+            "DEFAULT_SYNC_CONFIG",
+            "apply_pr_sync(",
+            'config["labelPrefixes"] = ["type:", "priority:", "test:"]',
+            "pr_labels=passed",
+            "pr_milestone=passed",
+            "pr_assignees=passed",
+            "project_v2_task_status=passed",
+            "non_default_base_branch=passed",
+            "pr_sync_structured_metadata=passed",
+            "pr_sync_cleanup=passed",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, text)
+
+        self.assertIn("python tests/qa/live_pr_sync.py", workflow)
+        self.assertIn("PROJECT_SETUP_PAT: ${{ secrets.QA_PROJECT_SETUP_PAT }}", workflow)
 
     def test_old_qa_deployment_history_is_cleaned_after_live_qa(self):
         metadata = self.read(".github/workflows/pr-metadata.yml")
