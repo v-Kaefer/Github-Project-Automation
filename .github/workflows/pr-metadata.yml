@@ -35,6 +35,17 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Autofill promotion related PR context
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python -m project_setup.related_prs autofill \
+            --repo "$GITHUB_REPOSITORY" \
+            --event-path "$GITHUB_EVENT_PATH"
+
       - name: Autofill recoverable pull request metadata
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -58,6 +69,18 @@ jobs:
             --repo "$REPOSITORY" \
             --pr-number "$PR_NUMBER" \
             --comment
+
+      - name: Validate promotion related PR context
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          python -m project_setup.related_prs validate \
+            --repo "$GITHUB_REPOSITORY" \
+            --pr-number "$PR_NUMBER"
 
   qa-live:
     name: live-qa-after-guardrails
