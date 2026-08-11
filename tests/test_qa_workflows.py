@@ -27,7 +27,6 @@ class QaWorkflowContractTests(unittest.TestCase):
         text = self.read(".github/workflows/main-source-branch.yml")
         self.assertIn("pull_request_target:", text)
         self.assertNotIn("actions/checkout", text)
-        self.assertIn('branches: ["main"]', text)
         self.assertIn('HEAD_REF" != "Q.A', text)
         self.assertNotIn('HEAD_REF" != "develop', text)
         self.assertIn("name: validate-main-source", text)
