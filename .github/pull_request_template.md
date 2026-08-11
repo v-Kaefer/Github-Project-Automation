@@ -5,7 +5,7 @@
 - <milestone>
 
 ## Related PRs
-- <optional: #123, #124; promotion PRs are auto-detected when possible>
+- <optional related pull request numbers; promotion PRs are auto-detected when possible>
 
 ## Summary
 - <what changed and why>
