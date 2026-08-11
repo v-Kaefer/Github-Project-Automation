@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
+import subprocess
+import sys
+import tempfile
 import unittest
 
 
@@ -128,10 +132,31 @@ class QaWorkflowContractTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 self.assertIn(expected, metadata)
 
+        self.assertIn("REPOSITORY_ROOT = Path(__file__).resolve().parents[2]", cleanup)
+        self.assertIn("sys.path.insert(0, str(REPOSITORY_ROOT))", cleanup)
         self.assertIn("/deployments?environment=", cleanup)
         self.assertIn('"state": "inactive"', cleanup)
         self.assertIn('"DELETE"', cleanup)
         self.assertIn("--environment must be exactly 'qa'", cleanup)
+
+    def test_cleanup_cli_imports_from_outside_repository_without_pythonpath(self):
+        script = ROOT / "tests/qa/cleanup_deployments.py"
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            result = subprocess.run(
+                [sys.executable, str(script), "--help"],
+                cwd=temporary_directory,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
+        self.assertIn("Clean historical GitHub deployments", result.stdout)
 
     def test_issue_generation_is_manual_and_requires_explicit_confirmation(self):
         text = self.read(".github/workflows/qa-issue-generation.yml")
