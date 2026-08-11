@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import tempfile
+import time
 import urllib.parse
 
 from project_setup.github import API_BASE, GitHubClient, split_repo
@@ -20,6 +21,8 @@ QA_SYNC_PROJECT_PREFIX = "QA PR Sync validation "
 QA_SYNC_ISSUE_PREFIX = "QA PR Sync task "
 QA_SYNC_PR_PREFIX = "QA PR Sync validation "
 QA_SYNC_BRANCH_PREFIX = "qa/pr-sync/"
+PROJECT_READBACK_TIMEOUT_SECONDS = 20.0
+PROJECT_READBACK_INTERVAL_SECONDS = 1.0
 
 
 def require_sandbox(repo: str) -> None:
@@ -146,6 +149,30 @@ def project_item_status(
         if not page["pageInfo"]["hasNextPage"]:
             return None
         cursor = page["pageInfo"]["endCursor"]
+
+
+def wait_for_project_task_status(
+    client: GitHubClient,
+    project_id: str,
+    repo: str,
+    issue_number: int,
+    expected_status: str,
+    *,
+    timeout_seconds: float = PROJECT_READBACK_TIMEOUT_SECONDS,
+    interval_seconds: float = PROJECT_READBACK_INTERVAL_SECONDS,
+) -> tuple[bool, str | None]:
+    task_node = issue_node_id(client, repo, issue_number)
+    deadline = time.monotonic() + timeout_seconds
+    last_status: str | None = None
+    while True:
+        project_items = list_project_items(client, project_id)
+        if task_node in project_items:
+            last_status = project_item_status(client, project_id, repo, issue_number)
+            if last_status == expected_status:
+                return True, last_status
+        if time.monotonic() >= deadline:
+            return False, last_status
+        time.sleep(interval_seconds)
 
 
 def cleanup_stale_resources(client: GitHubClient, repo: str, owner: str, owner_type: str) -> None:
@@ -355,12 +382,18 @@ def main() -> int:
             raise RuntimeError("PR/task assignee fallback was not synchronized")
         print("pr_assignees=passed")
 
-        task_node = issue_node_id(client, args.repo, created_issue_number)
-        project_items = list_project_items(client, created_project_id)
-        if task_node not in project_items:
-            raise RuntimeError("Linked implementation task was not added to Project v2")
-        if project_item_status(client, created_project_id, args.repo, created_issue_number) != "In review":
-            raise RuntimeError("Project v2 Status was not synchronized to In review")
+        project_converged, visible_status = wait_for_project_task_status(
+            client,
+            created_project_id,
+            args.repo,
+            created_issue_number,
+            "In review",
+        )
+        if not project_converged:
+            raise RuntimeError(
+                "Project v2 task/status did not converge after synchronization; "
+                f"last visible status: {visible_status or '(task not visible)'}"
+            )
         print("project_v2_task_status=passed")
         print("non_default_base_branch=passed")
         print("pr_sync_structured_metadata=passed")
