@@ -4,13 +4,12 @@ name: PR Sync
 "on":
   pull_request_target:
     types:
-      - opened
-      - synchronize
-      - reopened
-      - edited
       - ready_for_review
       - converted_to_draft
       - closed
+  workflow_run:
+    workflows: ["PR metadata validation"]
+    types: [completed]
 
 permissions:
   contents: read
@@ -18,19 +17,36 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
   sync:
     if: >-
-      github.event.pull_request.head.repo.full_name == github.repository
+      (
+        github.event_name == 'pull_request_target' &&
+        github.event.pull_request.head.repo.full_name == github.repository
+      ) || (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'pull_request_target' &&
+        github.event.workflow_run.head_repository.full_name == github.repository &&
+        github.event.workflow_run.pull_requests[0].number != null
+      )
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout trusted base commit
+      - name: Checkout trusted base commit for lifecycle events
+        if: github.event_name == 'pull_request_target'
         uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Checkout trusted base branch after guardrails
+        if: github.event_name == 'workflow_run'
+        uses: actions/checkout@v6
+        with:
+          ref: refs/heads/${{ github.event.workflow_run.pull_requests[0].base.ref }}
           persist-credentials: false
 
       - name: Set up Python
@@ -38,18 +54,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Autofill recoverable pull request metadata
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          GH_TOKEN: ${{ github.token }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          python -m project_setup.pr_autofill \
-            --repo "$GITHUB_REPOSITORY" \
-            --event-path "$GITHUB_EVENT_PATH"
-
-      - name: Synchronize pull request context
+      - name: Synchronize live pull request context
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
@@ -59,6 +64,7 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          python -m project_setup.pr_sync \
+          # The router delegates implementation PRs to: python -m project_setup.pr_sync
+          python -m project_setup.pr_sync_router \
             --repo "$GITHUB_REPOSITORY" \
             --event-path "$GITHUB_EVENT_PATH"

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
+import subprocess
+import sys
+import tempfile
 import unittest
 
 
@@ -55,6 +59,7 @@ class QaWorkflowContractTests(unittest.TestCase):
         self.assertIn("vars.QA_REPOSITORY", text)
         self.assertIn("secrets.QA_PROJECT_SETUP_PAT", text)
         self.assertIn("tests/qa/live_sandbox.py", text)
+        self.assertIn("tests/qa/live_pr_sync.py", text)
         self.assertIn("QA_REPOSITORY must not be the source repository", text)
 
     def test_live_qa_is_reusable_only_and_guardrail_gated(self):
@@ -68,10 +73,11 @@ class QaWorkflowContractTests(unittest.TestCase):
         self.assertIn("cancel-in-progress: true", live)
         self.assertIn("ref: ${{ inputs.checkout_ref }}", live)
 
+        self.assertIn("pull_request_target:", metadata)
         self.assertIn("needs: validate-pr", metadata)
         self.assertIn("needs.validate-pr.result == 'success'", metadata)
-        self.assertIn("pull_requests[0].head.ref == 'Q.A'", metadata)
-        self.assertIn("pull_requests[0].base.ref == 'main'", metadata)
+        self.assertIn("github.event.pull_request.head.ref == 'Q.A'", metadata)
+        self.assertIn("github.event.pull_request.base.ref == 'main'", metadata)
         self.assertIn("uses: ./.github/workflows/qa-live.yml", metadata)
 
     def test_live_sandbox_prunes_only_prefixed_stale_resources(self):
@@ -89,6 +95,28 @@ class QaWorkflowContractTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 self.assertIn(expected, text)
 
+    def test_live_pr_sync_verifies_structured_metadata_on_non_default_base(self):
+        text = self.read("tests/qa/live_pr_sync.py")
+        workflow = self.read(".github/workflows/qa-live.yml")
+
+        for expected in (
+            "DEFAULT_SYNC_CONFIG",
+            "apply_pr_sync(",
+            'config["labelPrefixes"] = ["type:", "priority:", "test:"]',
+            "pr_labels=passed",
+            "pr_milestone=passed",
+            "pr_assignees=passed",
+            "project_v2_task_status=passed",
+            "non_default_base_branch=passed",
+            "pr_sync_structured_metadata=passed",
+            "pr_sync_cleanup=passed",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, text)
+
+        self.assertIn("python tests/qa/live_pr_sync.py", workflow)
+        self.assertIn("PROJECT_SETUP_PAT: ${{ secrets.QA_PROJECT_SETUP_PAT }}", workflow)
+
     def test_old_qa_deployment_history_is_cleaned_after_live_qa(self):
         metadata = self.read(".github/workflows/pr-metadata.yml")
         cleanup = self.read("tests/qa/cleanup_deployments.py")
@@ -104,10 +132,31 @@ class QaWorkflowContractTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 self.assertIn(expected, metadata)
 
+        self.assertIn("REPOSITORY_ROOT = Path(__file__).resolve().parents[2]", cleanup)
+        self.assertIn("sys.path.insert(0, str(REPOSITORY_ROOT))", cleanup)
         self.assertIn("/deployments?environment=", cleanup)
         self.assertIn('"state": "inactive"', cleanup)
         self.assertIn('"DELETE"', cleanup)
         self.assertIn("--environment must be exactly 'qa'", cleanup)
+
+    def test_cleanup_cli_imports_from_outside_repository_without_pythonpath(self):
+        script = ROOT / "tests/qa/cleanup_deployments.py"
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            result = subprocess.run(
+                [sys.executable, str(script), "--help"],
+                cwd=temporary_directory,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
+        self.assertIn("Clean historical GitHub deployments", result.stdout)
 
     def test_issue_generation_is_manual_and_requires_explicit_confirmation(self):
         text = self.read(".github/workflows/qa-issue-generation.yml")
