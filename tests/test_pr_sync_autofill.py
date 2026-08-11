@@ -117,14 +117,22 @@ class PrSyncAutofillTests(unittest.TestCase):
 
 
 class PrSyncAutofillWorkflowContractTests(unittest.TestCase):
-    def test_autofill_runs_before_sync_in_same_workflow(self):
-        text = (ROOT / ".github/workflows/pr-sync.yml").read_text(encoding="utf-8")
+    def test_autofill_runs_in_guardrails_before_validation_not_in_pr_sync(self):
+        guardrails = (ROOT / ".github/workflows/pr-metadata.yml").read_text(encoding="utf-8")
+        sync = (ROOT / ".github/workflows/pr-sync.yml").read_text(encoding="utf-8")
         autofill = "python -m project_setup.pr_autofill"
-        sync = "python -m project_setup.pr_sync"
-        self.assertIn(autofill, text)
-        self.assertIn(sync, text)
-        self.assertLess(text.index(autofill), text.index(sync))
-        self.assertIn("pull-requests: write", text)
+        validation = "python scripts/validation/validate_pr_body.py"
+
+        self.assertIn(autofill, guardrails)
+        self.assertIn(validation, guardrails)
+        self.assertLess(guardrails.index(autofill), guardrails.index(validation))
+        self.assertIn("pull-requests: write", guardrails)
+
+        self.assertNotIn(autofill, sync)
+        self.assertIn("workflow_run:", sync)
+        self.assertIn('workflows: ["PR metadata validation"]', sync)
+        self.assertIn("github.event.workflow_run.conclusion == 'success'", sync)
+        self.assertIn("python -m project_setup.pr_sync", sync)
 
 
 if __name__ == "__main__":
