@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import datetime
 import json
 import os
 from pathlib import Path
@@ -22,7 +23,7 @@ CLOSING_ISSUE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 PLACEHOLDER_PATTERN = re.compile(
-    r"(?:<[^<>]+>|\b(?:todo|tbd|placeholder|replace|fill in|optional)\b)",
+    r"(?:<[^<>]+>|\b(?:todo|tbd|placeholder|replace|fill in|optional|example)\b)",
     re.IGNORECASE,
 )
 
@@ -58,7 +59,8 @@ class RelatedPrDetection:
     branch_match_numbers: list[int]
     inherited_numbers: list[int]
     source_promotion_numbers: list[int]
-    previous_promotion_merged_at: str | None
+    cutoff: str | None
+    cutoff_source: str
 
 
 def load_project_config(path: str | os.PathLike[str] = "project_setup.json") -> dict[str, Any]:
@@ -117,11 +119,14 @@ def pr_numbers_from_body_sections(body: str | None, section_names: list[str]) ->
     for name, lines in sections.items():
         if name not in wanted:
             continue
-        for match in PR_REFERENCE_PATTERN.finditer("\n".join(lines)):
-            number = int(match.group(1))
-            if number not in seen:
-                seen.add(number)
-                numbers.append(number)
+        for line in lines:
+            if PLACEHOLDER_PATTERN.search(line):
+                continue
+            for match in PR_REFERENCE_PATTERN.finditer(line):
+                number = int(match.group(1))
+                if number not in seen:
+                    seen.add(number)
+                    numbers.append(number)
     return numbers
 
 
@@ -164,12 +169,7 @@ def is_promotion_context(
 
 def _list_pulls(client: GitHubClient, repo: str, *, state: str, base: str) -> list[dict[str, Any]]:
     query = urllib.parse.urlencode(
-        {
-            "state": state,
-            "base": base,
-            "sort": "updated",
-            "direction": "desc",
-        }
+        {"state": state, "base": base, "sort": "updated", "direction": "desc"}
     )
     return client.paginated(f"{API_BASE}/repos/{repo}/pulls?{query}")
 
@@ -187,10 +187,9 @@ def _previous_same_promotion(
     repo: str,
     ctx: PullRequestContext,
 ) -> dict[str, Any] | None:
-    candidates = _list_pulls(client, repo, state="closed", base=ctx.base_ref)
     merged = [
         pr
-        for pr in candidates
+        for pr in _list_pulls(client, repo, state="closed", base=ctx.base_ref)
         if int(pr.get("number") or 0) != ctx.number
         and pr.get("merged_at")
         and _head_ref(pr) == ctx.head_ref
@@ -199,15 +198,26 @@ def _previous_same_promotion(
     return merged[0] if merged else None
 
 
+def _detection_cutoff(
+    previous: dict[str, Any] | None,
+    fallback_days: int,
+) -> tuple[str | None, str]:
+    if previous and previous.get("merged_at"):
+        return str(previous["merged_at"]), "previous promotion"
+    if fallback_days <= 0:
+        return None, "repository history"
+    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=fallback_days)
+    return cutoff.strftime("%Y-%m-%dT%H:%M:%SZ"), f"fallback {fallback_days} days"
+
+
 def _candidate_source_pulls(
     client: GitHubClient,
     repo: str,
     ctx: PullRequestContext,
     cutoff: str | None,
 ) -> list[dict[str, Any]]:
-    candidates = _list_pulls(client, repo, state="closed", base=ctx.head_ref)
     result: list[dict[str, Any]] = []
-    for pr in candidates:
+    for pr in _list_pulls(client, repo, state="closed", base=ctx.head_ref):
         merged_at = pr.get("merged_at")
         if not merged_at:
             continue
@@ -218,10 +228,7 @@ def _candidate_source_pulls(
     return result
 
 
-def _is_configured_promotion_pr(
-    pr: dict[str, Any],
-    config_path: str | os.PathLike[str],
-) -> bool:
+def _is_configured_promotion_pr(pr: dict[str, Any], config_path: str | os.PathLike[str]) -> bool:
     return promotion_path_for(_head_ref(pr), _base_ref(pr), config_path) is not None
 
 
@@ -233,10 +240,9 @@ def detect_related_prs(
     config_path: str | os.PathLike[str] = "project_setup.json",
 ) -> RelatedPrDetection:
     config = load_related_prs_config(config_path)
-    if not config.get("enabled", True):
-        return RelatedPrDetection([], [], [], [], [], None)
-    if not is_promotion_context(ctx, config_path):
-        return RelatedPrDetection([], [], [], [], [], None)
+    empty = RelatedPrDetection([], [], [], [], [], None, "not applicable")
+    if not config.get("enabled", True) or not is_promotion_context(ctx, config_path):
+        return empty
 
     section_names = [str(item) for item in config.get("bodySections", [])]
     explicit = (
@@ -246,14 +252,13 @@ def detect_related_prs(
     )
 
     previous = _previous_same_promotion(client, repo, ctx)
-    cutoff = str(previous.get("merged_at")) if previous and previous.get("merged_at") else None
+    cutoff, cutoff_source = _detection_cutoff(previous, int(config.get("fallbackDays", 7)))
     candidates = _candidate_source_pulls(client, repo, ctx, cutoff)
-
     patterns = [str(item) for item in config.get("branchPatterns", [])]
+
     branch_matches_found: list[int] = []
     inherited: list[int] = []
     source_promotions: list[int] = []
-
     for candidate in candidates:
         number = int(candidate["number"])
         if _is_configured_promotion_pr(candidate, config_path):
@@ -277,7 +282,8 @@ def detect_related_prs(
         branch_match_numbers=list(dict.fromkeys(branch_matches_found)),
         inherited_numbers=list(dict.fromkeys(inherited)),
         source_promotion_numbers=list(dict.fromkeys(source_promotions)),
-        previous_promotion_merged_at=cutoff,
+        cutoff=cutoff,
+        cutoff_source=cutoff_source,
     )
 
 
@@ -297,8 +303,7 @@ def _split_body(body: str) -> tuple[list[str], list[tuple[str, list[str]]]]:
                 sections.append((current_name, current_lines))
             current_name = heading.group(1)
             current_lines = []
-            continue
-        if current_name is None:
+        elif current_name is None:
             preamble.append(line)
         else:
             current_lines.append(line)
@@ -309,9 +314,9 @@ def _split_body(body: str) -> tuple[list[str], list[tuple[str, list[str]]]]:
 
 def _render_body(preamble: list[str], sections: list[tuple[str, list[str]]]) -> str:
     parts: list[str] = []
-    text = "\n".join(preamble).rstrip()
-    if text:
-        parts.append(text)
+    preamble_text = "\n".join(preamble).rstrip()
+    if preamble_text:
+        parts.append(preamble_text)
     for name, lines in sections:
         content = "\n".join(lines).rstrip()
         parts.append(f"## {name}" + (f"\n{content}" if content else ""))
@@ -323,69 +328,68 @@ def _section_is_placeholder(lines: list[str]) -> bool:
     return not meaningful or all(PLACEHOLDER_PATTERN.search(line) for line in meaningful)
 
 
-def rewrite_promotion_body(
-    body: str,
-    related_pulls: list[dict[str, Any]],
-) -> tuple[str, bool]:
-    related_numbers = [int(pr["number"]) for pr in related_pulls]
+def rewrite_promotion_body(body: str, related_pulls: list[dict[str, Any]]) -> tuple[str, bool]:
     issue_numbers: list[int] = []
-    seen_issues: set[int] = set()
     milestone_titles: list[str] = []
+    seen_issues: set[int] = set()
     seen_milestones: set[str] = set()
-
     for pr in related_pulls:
-        for issue_number in closing_issue_numbers(pr.get("body") or ""):
-            if issue_number not in seen_issues:
-                seen_issues.add(issue_number)
-                issue_numbers.append(issue_number)
+        for number in closing_issue_numbers(pr.get("body") or ""):
+            if number not in seen_issues:
+                seen_issues.add(number)
+                issue_numbers.append(number)
         milestone = pr.get("milestone") or {}
         title = str(milestone.get("title") or "").strip()
         if title and title not in seen_milestones:
             seen_milestones.add(title)
             milestone_titles.append(title)
 
-    preamble, sections = _split_body(body)
     replacements: dict[str, list[str]] = {
         normalize_header("Related PRs"): [
             f"- #{int(pr['number'])} — {str(pr.get('title') or '').strip()}" for pr in related_pulls
-        ],
+        ]
     }
     if issue_numbers:
         replacements[normalize_header("Linked Issue")] = [f"- Closes #{number}" for number in issue_numbers]
     if milestone_titles:
         replacements[normalize_header("Milestone")] = [f"- {title}" for title in milestone_titles]
 
+    preamble, sections = _split_body(body)
     rewritten: list[tuple[str, list[str]]] = []
     seen_sections: set[str] = set()
-    summary_done = False
+    has_summary = False
     for name, lines in sections:
         key = normalize_header(name)
         if key in replacements:
             rewritten.append((name, replacements[key]))
             seen_sections.add(key)
-            continue
-        if key == normalize_header("Summary") and _section_is_placeholder(lines):
-            summary_lines = [
-                f"- Promotes {len(related_numbers)} related PR(s) as one {related_pulls[0].get('base', {}).get('ref', 'source')} increment."
-            ]
-            summary_lines.extend(
-                f"- #{int(pr['number'])}: {str(pr.get('title') or '').strip()}" for pr in related_pulls
-            )
-            rewritten.append((name, summary_lines))
-            summary_done = True
-            continue
-        rewritten.append((name, lines))
+        elif key == normalize_header("Summary"):
+            has_summary = True
+            if _section_is_placeholder(lines):
+                rewritten.append(
+                    (
+                        name,
+                        [f"- Promotes {len(related_pulls)} related PR(s)."]
+                        + [f"- #{int(pr['number'])}: {str(pr.get('title') or '').strip()}" for pr in related_pulls],
+                    )
+                )
+            else:
+                rewritten.append((name, lines))
+        else:
+            rewritten.append((name, lines))
 
-    insertion_order = ["Linked Issue", "Milestone", "Related PRs"]
-    for target in reversed(insertion_order):
+    for target in reversed(("Linked Issue", "Milestone", "Related PRs")):
         key = normalize_header(target)
         if key in replacements and key not in seen_sections:
             rewritten.insert(0, (target, replacements[key]))
-
-    if not summary_done and not any(normalize_header(name) == normalize_header("Summary") for name, _ in rewritten):
-        rewritten.append(("Summary", [f"- Promotes {len(related_numbers)} related PR(s)."] + [
-            f"- #{int(pr['number'])}: {str(pr.get('title') or '').strip()}" for pr in related_pulls
-        ]))
+    if not has_summary:
+        rewritten.append(
+            (
+                "Summary",
+                [f"- Promotes {len(related_pulls)} related PR(s)."]
+                + [f"- #{int(pr['number'])}: {str(pr.get('title') or '').strip()}" for pr in related_pulls],
+            )
+        )
 
     rendered = _render_body(preamble, rewritten)
     return rendered, rendered != (body or "")
@@ -406,8 +410,7 @@ def _upsert_comment(
     )
     if dry_run:
         print(body)
-        return
-    if existing:
+    elif existing:
         client.update_issue_comment(repo, int(existing["id"]), body)
     else:
         client.create_issue_comment(repo, number, body)
@@ -419,16 +422,15 @@ def render_detection_comment(ctx: PullRequestContext, detection: RelatedPrDetect
         "## Related PR detection",
         "",
         f"- Promotion: `{ctx.head_ref} -> {ctx.base_ref}`",
-        f"- Previous promotion cutoff: `{detection.previous_promotion_merged_at or 'none'}`",
+        f"- Detection cutoff: `{detection.cutoff or 'none'}` ({detection.cutoff_source})",
         f"- Explicit body references: {', '.join(f'#{n}' for n in detection.explicit_numbers) or 'none'}",
         f"- Branch-pattern matches: {', '.join(f'#{n}' for n in detection.branch_match_numbers) or 'none'}",
         f"- Inherited promotion references: {', '.join(f'#{n}' for n in detection.inherited_numbers) or 'none'}",
         f"- Source promotion PRs: {', '.join(f'#{n}' for n in detection.source_promotion_numbers) or 'none'}",
         "- Related PRs:",
     ]
-    if detection.related_numbers:
-        lines.extend(f"  - #{number}" for number in detection.related_numbers)
-    else:
+    lines.extend(f"  - #{number}" for number in detection.related_numbers)
+    if not detection.related_numbers:
         lines.append("  - none")
     return "\n".join(lines)
 
@@ -448,7 +450,6 @@ def apply_promotion_autofill(
     detection = detect_related_prs(client, repo, ctx, config_path=config_path)
     related_pulls = [_fetch_pull(client, repo, number) for number in detection.related_numbers]
     related_pulls = [pr for pr in related_pulls if pr.get("merged_at")]
-
     _upsert_comment(
         client,
         repo,
@@ -468,12 +469,7 @@ def apply_promotion_autofill(
     if dry_run:
         print(f"[DRY-RUN] Would update promotion PR #{ctx.number} with {len(related_pulls)} related PR(s).")
         return 0
-
-    client.request_json(
-        "PATCH",
-        f"{API_BASE}/repos/{repo}/pulls/{ctx.number}",
-        {"body": updated_body},
-    )
+    client.request_json("PATCH", f"{API_BASE}/repos/{repo}/pulls/{ctx.number}", {"body": updated_body})
     print(f"Updated promotion PR #{ctx.number} with {len(related_pulls)} related PR(s).")
     return 0
 
@@ -491,24 +487,23 @@ def validate_promotion_context(
         return []
 
     config = load_related_prs_config(config_path)
-    sections = [str(item) for item in config.get("bodySections", [])]
-    body_numbers = pr_numbers_from_body_sections(ctx.body, sections)
-    findings: list[str] = []
+    body_numbers = pr_numbers_from_body_sections(
+        ctx.body,
+        [str(item) for item in config.get("bodySections", [])],
+    )
     if not body_numbers:
-        findings.append("Promotion PR has no related PR references in a configured Related PRs section.")
-        return findings
+        return ["Promotion PR has no related PR references in a configured Related PRs section."]
 
+    findings: list[str] = []
     for number in body_numbers:
-        related = _fetch_pull(client, repo, number)
-        if not related.get("merged_at"):
+        if not _fetch_pull(client, repo, number).get("merged_at"):
             findings.append(f"Related PR #{number} is not merged and cannot be promoted.")
 
     detection = detect_related_prs(client, repo, ctx, config_path=config_path)
-    missing = [number for number in detection.related_numbers if number not in set(body_numbers)]
+    body_set = set(body_numbers)
+    missing = [number for number in detection.related_numbers if number not in body_set]
     if missing:
-        findings.append(
-            "Promotion PR is missing auto-detected related PRs: " + ", ".join(f"#{number}" for number in missing)
-        )
+        findings.append("Promotion PR is missing auto-detected related PRs: " + ", ".join(f"#{n}" for n in missing))
     return findings
 
 
@@ -518,10 +513,9 @@ def _promotion_link_marker(base_ref: str) -> str:
 
 
 def _render_promotion_link(ctx: PullRequestContext, state: str) -> str:
-    marker = _promotion_link_marker(ctx.base_ref)
     return "\n".join(
         [
-            marker,
+            _promotion_link_marker(ctx.base_ref),
             "## Promotion linkage",
             f"- State: `{state}`",
             f"- Stage: `{ctx.base_ref}`",
@@ -553,9 +547,9 @@ def apply_promotion_sync(
 
     state = "merged" if ctx.action == "closed" and ctx.merged else "planned"
     marker = _promotion_link_marker(ctx.base_ref)
-    body = _render_promotion_link(ctx, state)
+    backlink = _render_promotion_link(ctx, state)
     for number in related_numbers:
-        _upsert_comment(client, repo, number, marker, body, dry_run=dry_run)
+        _upsert_comment(client, repo, number, marker, backlink, dry_run=dry_run)
 
     summary = "\n".join(
         [
@@ -597,31 +591,17 @@ def main(argv: list[str] | None = None) -> int:
     if not args.repo:
         raise SystemExit("Missing --repo or GITHUB_REPOSITORY")
     client = require_client()
-
     if args.command == "validate":
         findings = validate_promotion_context(client, args.repo, args.pr_number, config_path=args.config)
         for finding in findings:
             print(f"Promotion context: {finding}")
         return 1 if findings else 0
-
     if not args.event_path:
         raise SystemExit("Missing --event-path or GITHUB_EVENT_PATH")
     event = _load_event(args.event_path)
     if args.command == "autofill":
-        return apply_promotion_autofill(
-            client,
-            args.repo,
-            event,
-            config_path=args.config,
-            dry_run=args.dry_run,
-        )
-    return apply_promotion_sync(
-        client,
-        args.repo,
-        event,
-        config_path=args.config,
-        dry_run=args.dry_run,
-    )
+        return apply_promotion_autofill(client, args.repo, event, config_path=args.config, dry_run=args.dry_run)
+    return apply_promotion_sync(client, args.repo, event, config_path=args.config, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":
