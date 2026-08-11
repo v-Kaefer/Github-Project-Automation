@@ -1,31 +1,33 @@
+---
 name: PR metadata validation
 
-on:
-  workflow_run:
-    workflows: ["PR Sync"]
-    types: [completed]
+"on":
+  pull_request_target:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - edited
 
 permissions:
   contents: read
   issues: write
-  pull-requests: read
+  pull-requests: write
 
 concurrency:
-  group: pr-metadata-${{ github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.id }}
+  group: pr-metadata-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
   validate-pr:
     if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'pull_request_target' &&
-      github.event.workflow_run.pull_requests[0].number != null
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout trusted default branch
+      - name: Checkout trusted base commit
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
 
       - name: Set up Python
@@ -33,17 +35,28 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Validate branch name and pull request metadata
+      - name: Autofill recoverable pull request metadata
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python -m project_setup.pr_autofill \
+            --repo "$GITHUB_REPOSITORY" \
+            --event-path "$GITHUB_EVENT_PATH"
+
+      - name: Validate live branch name and pull request metadata
         env:
           REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           python scripts/validation/validate_pr_body.py \
             --repo "$REPOSITORY" \
             --pr-number "$PR_NUMBER" \
-            --skip-draft-or-closed \
             --comment
 
   qa-live:
@@ -51,13 +64,13 @@ jobs:
     needs: validate-pr
     if: >-
       needs.validate-pr.result == 'success' &&
-      github.event.workflow_run.head_repository.full_name == github.repository &&
-      github.event.workflow_run.pull_requests[0].head.ref == 'Q.A' &&
-      github.event.workflow_run.pull_requests[0].base.ref == 'main'
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'Q.A' &&
+      github.event.pull_request.base.ref == 'main'
     uses: ./.github/workflows/qa-live.yml
     with:
       checkout_ref: refs/heads/Q.A
-      pr_number: ${{ github.event.workflow_run.pull_requests[0].number }}
+      pr_number: ${{ github.event.pull_request.number }}
     secrets: inherit
 
   qa-deployment-cleanup:
@@ -66,18 +79,18 @@ jobs:
     if: >-
       always() &&
       needs.qa-live.result != 'skipped' &&
-      github.event.workflow_run.head_repository.full_name == github.repository &&
-      github.event.workflow_run.pull_requests[0].head.ref == 'Q.A' &&
-      github.event.workflow_run.pull_requests[0].base.ref == 'main'
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'Q.A' &&
+      github.event.pull_request.base.ref == 'main'
     permissions:
       contents: read
       deployments: write
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout trusted default branch
+      - name: Checkout trusted base commit
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
 
       - name: Set up Python
