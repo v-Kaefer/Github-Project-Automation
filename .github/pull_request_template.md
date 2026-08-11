@@ -4,6 +4,9 @@
 ## Milestone
 - <milestone>
 
+## Related PRs
+- <optional: #123, #124; promotion PRs are auto-detected when possible>
+
 ## Summary
 - <what changed and why>
 
