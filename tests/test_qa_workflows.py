@@ -68,10 +68,11 @@ class QaWorkflowContractTests(unittest.TestCase):
         self.assertIn("cancel-in-progress: true", live)
         self.assertIn("ref: ${{ inputs.checkout_ref }}", live)
 
+        self.assertIn("pull_request_target:", metadata)
         self.assertIn("needs: validate-pr", metadata)
         self.assertIn("needs.validate-pr.result == 'success'", metadata)
-        self.assertIn("pull_requests[0].head.ref == 'Q.A'", metadata)
-        self.assertIn("pull_requests[0].base.ref == 'main'", metadata)
+        self.assertIn("github.event.pull_request.head.ref == 'Q.A'", metadata)
+        self.assertIn("github.event.pull_request.base.ref == 'main'", metadata)
         self.assertIn("uses: ./.github/workflows/qa-live.yml", metadata)
 
     def test_live_sandbox_prunes_only_prefixed_stale_resources(self):
