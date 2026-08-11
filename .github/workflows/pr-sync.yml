@@ -64,6 +64,7 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          python -m project_setup.pr_sync \
+          # The router delegates implementation PRs to: python -m project_setup.pr_sync
+          python -m project_setup.pr_sync_router \
             --repo "$GITHUB_REPOSITORY" \
             --event-path "$GITHUB_EVENT_PATH"

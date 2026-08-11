@@ -63,11 +63,20 @@ jobs:
           fi
           echo "Q.A sandbox configuration is present. Secret values were not printed."
 
-      - name: Run live self-cleaning integration test
+      - name: Run live self-cleaning resource integration test
         env:
           QA_REPOSITORY: ${{ vars.QA_REPOSITORY }}
           PROJECT_SETUP_PAT: ${{ secrets.QA_PROJECT_SETUP_PAT }}
         run: >-
           python tests/qa/live_sandbox.py
+          --repo "$QA_REPOSITORY"
+          --run-id "pr-${{ inputs.pr_number }}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+      - name: Run live PR Sync structured metadata test
+        env:
+          QA_REPOSITORY: ${{ vars.QA_REPOSITORY }}
+          PROJECT_SETUP_PAT: ${{ secrets.QA_PROJECT_SETUP_PAT }}
+        run: >-
+          python tests/qa/live_pr_sync.py
           --repo "$QA_REPOSITORY"
           --run-id "pr-${{ inputs.pr_number }}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"

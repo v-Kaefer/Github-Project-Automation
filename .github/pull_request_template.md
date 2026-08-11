@@ -4,6 +4,9 @@
 ## Milestone
 - <milestone>
 
+## Related PRs
+- <optional related pull request numbers; promotion PRs are auto-detected when possible>
+
 ## Summary
 - <what changed and why>
 

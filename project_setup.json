@@ -6,6 +6,30 @@
   "backlogManifestFile": "config/stories/backlog-manifest.json",
   "secretName": "PROJECT_SETUP_PAT",
   "prAutomation": {
+    "relatedPrs": {
+      "enabled": true,
+      "branchPatterns": [
+        "^feat/",
+        "^fix/",
+        "^docs/",
+        "^refactor/",
+        "^test/",
+        "^hotfix/",
+        "^phase/",
+        "^task/",
+        "^chore/",
+        "^ci/",
+        "^release/"
+      ],
+      "bodySections": [
+        "Related PRs",
+        "Related Pull Requests"
+      ],
+      "includeBranchMatches": true,
+      "includeBodyReferences": true,
+      "inheritBodyReferences": true,
+      "fallbackDays": 7
+    },
     "sync": {
       "enabled": true,
       "syncLabels": true,
@@ -19,7 +43,6 @@
       "assignAuthorWhenTaskUnassigned": true,
       "linkSubissues": true,
       "syncProject": true,
-      "skipPromotionPullRequests": true,
       "promotionPaths": [
         {
           "head": "develop",
