@@ -4,118 +4,117 @@
 
 This document is the execution contract for pull request governance in GitHub Project Automation (GPA).
 
-The reference behavior comes from the proven Take Your Pills governance lane, but GPA generalizes the repository-specific release logic into configurable Related PR Detection.
-
-The invariant remains:
+The core invariant is:
 
 > **Autofill -> Guardrails -> PR Sync**
 
-The important addition is that Autofill and PR Sync are now routed by PR context:
+PR state is always re-read between mutation and synchronization stages so later jobs do not consume stale webhook payloads.
 
-- implementation PRs use one canonical linked issue/task;
-- promotion PRs use an aggregate set of related PRs.
+GPA has two PR contexts:
+
+- **Implementation PR** — one canonical linked issue/task;
+- **Promotion PR** — an aggregate manifest of already merged implementation PRs.
 
 ## Architecture
 
 ```mermaid
 flowchart TD
     A[PR opened / synchronize / reopened / edited] --> G[PR metadata validation<br/>Guardrails]
-
     G --> R{PR context}
 
-    R -->|Implementation| IAF[Implementation Autofill<br/>branch token -> issue/task]
+    R -->|Implementation| IAF[Implementation Autofill<br/>branch/body -> issue/task]
     IAF --> ILIVE[Read live PR]
     ILIVE --> IV[Implementation validation]
 
-    R -->|Promotion path| PAF[Related PR Detection]
-    PAF --> PB[Branch-pattern matches]
-    PAF --> PE[Explicit body references]
-    PAF --> PI[Inherited references from prior promotion PRs]
-    PB --> PM[Aggregate and deduplicate]
+    R -->|Promotion| PAF[Related PR Detection]
+    PAF --> PB[Configured branch-pattern matches]
+    PAF --> PE[Explicit Related PR body references]
+    PAF --> PI[Inherited references from prior promotion]
+    PB --> PM[Union + deduplicate]
     PE --> PM
     PI --> PM
     PM --> PWRITE[Autofill Related PRs / Linked Issues / Milestones]
     PWRITE --> PLIVE[Read live promotion PR]
-    PLIVE --> PV[Promotion-context validation]
+    PLIVE --> PV[Promotion validation]
 
     IV --> V{Guardrails successful?}
     PV --> V
-    V -- No --> STOP[Stop governance lane<br/>write/update validation feedback]
+    V -- No --> STOP[Stop governance lane]
     V -- Yes --> WR[workflow_run: Guardrails succeeded]
 
     WR --> S[PR Sync Router]
+    L[ready_for_review<br/>converted_to_draft<br/>closed] --> S
     S --> T{PR context}
 
     T -->|Implementation| IS[Implementation Sync]
-    IS --> ILIVE2[Refetch live PR]
-    ILIVE2 --> TASK[Resolve canonical linked issue/task]
-    TASK --> META[Sync labels / milestone / assignees]
-    META --> REL[Sync parent / sub-issue]
-    REL --> PROJ[Optional Project v2 status]
+    IS --> TASK[Resolve canonical task]
+    TASK --> IMETA[Sync PR labels / milestone / assignees]
+    IMETA --> REL[Sync parent / sub-issue]
+    REL --> IPROJ[Task Project v2 membership/status]
 
     T -->|Promotion| PS[Promotion Sync]
-    PS --> PLIVE2[Refetch live promotion PR]
-    PLIVE2 --> MANIFEST[Read aggregate Related PR manifest]
-    MANIFEST --> BACKLINK[Create/update promotion backlinks]
-
-    L[ready_for_review<br/>converted_to_draft<br/>closed] --> S
+    PS --> MANIFEST[Read Related PR manifest]
+    MANIFEST --> AGG[Aggregate native metadata]
+    AGG --> PCONS[Consensus labels + milestone<br/>union assignees]
+    PCONS --> PPR[Write promotion PR native metadata]
+    PPR --> PPROJ[Promotion PR Project v2 membership/status]
+    PPROJ --> BACKLINK[Create/update stage backlinks]
 
     PV -->|Q.A -> main and valid| QA[Live Q.A sandbox]
-    QA --> QAC[Clean sandbox resources and historical Q.A deployments]
+    QA --> QAR[Resource/idempotency test]
+    QAR --> QAI[Implementation PR Sync live test]
+    QAI --> QAP[Promotion PR native metadata + Project test]
+    QAP --> QAC[Cleanup sandbox resources + deployments]
 ```
 
 ## Why the order matters
 
-`pull_request_target` payloads are snapshots. If Autofill changes a PR body and a synchronization stage immediately consumes the original event payload, that stage can observe stale metadata.
+`pull_request_target` payloads are snapshots. Autofill can update the real PR while the original event still contains the old body. GPA therefore uses this handoff:
 
-The safe handoff is therefore:
+1. Autofill mutates the real PR through the GitHub API.
+2. Guardrails validates the **live PR**.
+3. Successful Guardrails emits a separate `workflow_run`.
+4. PR Sync refetches the **live PR** and applies synchronization.
 
-1. Autofill mutates the real pull request through the GitHub API.
-2. Guardrails validates the **live pull request**.
-3. Successful Guardrails emits a separate `workflow_run` event.
-4. PR Sync refetches the **live pull request** before synchronization.
-
-This is the same architectural lesson learned in Take Your Pills after stale PR state was observed between independent automation stages.
+This is the same stale-state failure mode the reference Take Your Pills governance lane solved by serializing guardrails before hygiene.
 
 ## Implementation PR flow
 
-Implementation PRs keep the existing deterministic model:
-
 ```text
-branch
-  -> explicit issue/task token or configured backlog mapping
+implementation branch
+  -> branch/body resolution
   -> one canonical issue/task
-  -> Linked Issue + Milestone
+  -> Linked Issue + Milestone Autofill
   -> Guardrails
-  -> PR Sync
+  -> Implementation Sync
+  -> PR labels / milestone / assignees
+  -> task Project v2 lifecycle
 ```
 
-Closing references such as `Closes #123`, `Fixes #123`, or `Resolves #123` remain authoritative when already present.
+Existing `Closes #N`, `Fixes #N`, and `Resolves #N` references remain authoritative.
 
 ## Promotion PR flow
 
-Configured promotion paths are **routing rules**, not skip rules.
+Configured promotion paths are routing rules, not skip rules.
 
-The committed GPA paths are:
+Committed GPA paths:
 
 ```text
 develop -> Q.A
 Q.A -> main
 ```
 
-A promotion PR receives an aggregate context instead of one implementation task.
+A promotion represents an aggregate of implementation PRs and must never select an arbitrary first task as its source of truth.
 
 ### Related PR Detection
 
-GPA combines two primary discovery mechanisms and one propagation mechanism:
+The detector unions and deduplicates:
 
-1. **Branch-pattern detection** — merged PRs entering the promotion source branch whose head branch matches configured regexes.
-2. **Body references** — PR numbers explicitly listed in configured sections such as `## Related PRs`.
-3. **Inherited references** — a later promotion can inherit Related PRs declared by an earlier promotion PR merged into its source branch.
+1. merged PRs whose head branches match configured regexes;
+2. explicit PR references from configured body sections such as `## Related PRs`;
+3. inherited implementation PR references from prior promotion PRs.
 
-The result is unioned and deduplicated.
-
-Default branch patterns are intentionally broad examples:
+Default branch-pattern examples are deliberately broad:
 
 ```text
 ^feat/
@@ -131,143 +130,104 @@ Default branch patterns are intentionally broad examples:
 ^release/
 ```
 
-They are configuration, not engine constants. A target repository can replace the entire list with its own convention, for example:
-
-```json
-{
-  "prAutomation": {
-    "relatedPrs": {
-      "branchPatterns": ["^work/", "^bug/"]
-    }
-  }
-}
-```
-
-Explicit body references continue to work even when the referenced PR branch does not match a configured branch pattern.
+A target repository can replace the entire list through `prAutomation.relatedPrs.branchPatterns`.
 
 ### Detection window
 
-For `develop -> Q.A`, automatic discovery considers PRs merged into `develop` after the previous merged `develop -> Q.A` promotion.
+For `develop -> Q.A`, automatic discovery starts after the previous merged `develop -> Q.A` promotion.
 
-For `Q.A -> main`, the detector considers PRs merged into `Q.A` after the previous merged `Q.A -> main` promotion. When those source PRs are themselves promotions, their `Related PRs` sections are inherited so only already-promoted implementation work propagates toward `main`.
+For `Q.A -> main`, GPA considers promotions merged into `Q.A` after the previous `Q.A -> main` promotion and inherits their constituent implementation PRs. Work that remains only in `develop` is therefore not attributed to `main`.
 
-If no previous promotion exists, `fallbackDays` defines the bounded initial lookback. The committed default is seven days. Explicit body references are not dependent on the branch-pattern discovery window.
+When no earlier promotion exists, `fallbackDays` bounds the initial lookup. Explicit body references do not depend on that window.
 
-## Promotion Autofill contract
+## Promotion Autofill
 
-For promotion PRs, Related PR Detection may deterministically populate:
+Promotion Autofill can deterministically populate:
 
-- `## Related PRs` from detected source PRs;
-- `## Linked Issue` from closing references contained in those related PRs;
-- `## Milestone` from unique milestones present on those related PRs;
-- `## Summary` only when the section is still a placeholder.
+- `## Related PRs`;
+- `## Linked Issue` from closing references in the constituent PRs;
+- `## Milestone` from constituent PR milestone titles;
+- `## Summary` only while that section is still a placeholder.
 
-Human-authored summaries, risks, evidence, testing notes, and DoD decisions are preserved.
+Human-authored summaries, evidence, risks, test notes, and DoD decisions are preserved.
 
-## Promotion validation contract
+## Promotion native metadata contract
 
-Promotion Guardrails verify that:
+Promotion Sync treats the **related PR objects** as the aggregate source of truth for GitHub-native PR fields.
 
-- the PR is a configured promotion path;
-- at least one merged PR appears in the configured Related PR section;
-- referenced PRs are actually merged;
-- automatically detected related PRs are not silently omitted.
+### Labels
 
-Promotion PRs therefore no longer mean "skip validation". They use a different validation contract.
+Only configured managed families are synchronized, by default:
+
+```text
+type:
+priority:
+test:
+```
+
+Each family uses **consensus**:
+
+```text
+#101 priority:high
+#102 priority:high
+#103 priority:high
+        -> promotion priority:high
+```
+
+A disagreement or missing value does not cause GPA to select an arbitrary label. The managed family is omitted from the promotion PR and the conflict is reported in the Promotion Sync sticky comment.
+
+Unmanaged/manual labels are preserved.
+
+### Milestone
+
+Milestone is single-valued and also requires consensus across all related PRs. A unanimous milestone is applied to the promotion PR. Missing/disagreeing milestones clear the synchronized promotion milestone instead of selecting one arbitrarily.
+
+### Assignees
+
+Assignees are naturally multi-valued. Promotion Sync applies the deduplicated union of assignees from all related PRs.
+
+### Project v2
+
+Implementation Sync keeps its existing model: the **linked issue/task** is the Project v2 work item.
+
+Promotion Sync additionally treats the **promotion PR itself** as a Project v2 item because a promotion has an independent review/release lifecycle.
+
+Default lifecycle mapping:
+
+| Promotion PR state | Project Status |
+| --- | --- |
+| Draft | `In progress` |
+| Open / review | `In review` |
+| Closed without merge | `In progress` |
+| Merged | `Done` |
+
+This is what makes the native `Projects` sidebar field meaningful for promotion PRs when `PROJECT_SETUP_PROJECT_NUMBER` and `PROJECT_SETUP_PAT` are configured.
+
+## Promotion validation
+
+Guardrails verify that:
+
+- the head/base pair is a configured promotion path;
+- at least one merged PR is listed in the configured Related PR section;
+- every referenced PR is actually merged;
+- auto-detected related PRs are not silently omitted.
+
+Promotion PRs use their own contract rather than bypassing validation.
 
 ## PR Sync routing
 
 `.github/workflows/pr-sync.yml` invokes `project_setup.pr_sync_router`.
 
-The router performs exactly one of two modes:
-
 ```text
 implementation PR -> project_setup.pr_sync
-promotion PR      -> project_setup.related_prs promotion sync
+promotion PR      -> project_setup.promotion_sync
 ```
 
-Implementation Sync continues to own task-derived metadata, parent/sub-issue linkage, and optional Project v2 lifecycle synchronization.
-
-Promotion Sync owns the aggregate promotion manifest and idempotent backlinks from each related PR to the promotion PR. It does not copy metadata from an arbitrary first issue/task.
-
-## Workflow responsibilities
-
-### `.github/workflows/pr-metadata.yml` — Guardrails
-
-Execution order:
-
-1. Checkout trusted base commit.
-2. Run promotion Related PR Autofill when applicable.
-3. Run implementation Autofill when applicable.
-4. Validate the live implementation PR contract.
-5. Validate the live promotion context when applicable.
-6. For a valid `Q.A -> main` PR, run live Q.A and cleanup.
-
-### `.github/workflows/pr-sync.yml` — Sync/Hygiene
-
-Normal synchronization runs from:
-
-```text
-workflow_run(PR metadata validation = success)
-```
-
-Direct lifecycle events remain:
-
-- `ready_for_review`;
-- `converted_to_draft`;
-- `closed`.
-
-The router refetches live PR state through the implementation or promotion path as appropriate.
-
-## Configuration
-
-The related-PR contract lives under `prAutomation.relatedPrs`:
-
-```json
-{
-  "prAutomation": {
-    "relatedPrs": {
-      "enabled": true,
-      "branchPatterns": [
-        "^feat/",
-        "^fix/",
-        "^docs/",
-        "^refactor/",
-        "^test/",
-        "^hotfix/",
-        "^phase/",
-        "^task/",
-        "^chore/",
-        "^ci/",
-        "^release/"
-      ],
-      "bodySections": ["Related PRs", "Related Pull Requests"],
-      "includeBranchMatches": true,
-      "includeBodyReferences": true,
-      "inheritBodyReferences": true,
-      "fallbackDays": 7
-    },
-    "sync": {
-      "promotionPaths": [
-        {"head": "develop", "base": "Q.A"},
-        {"head": "Q.A", "base": "main"}
-      ]
-    }
-  }
-}
-```
-
-There is no promotion skip switch in the committed configuration. `promotionPaths` selects promotion mode.
+`project_setup.related_prs` owns discovery, Autofill, and validation. `project_setup.promotion_sync` owns aggregate native metadata, promotion Project membership/status, and backlinks.
 
 ## Authentication boundary
 
-Repository-scoped PR/issue operations use the built-in Actions token:
-
-```text
-github.token
-```
-
-The relevant workflows request:
+Repository-scoped mutations use the built-in Actions token:
 
 ```yaml
 permissions:
@@ -276,41 +236,55 @@ permissions:
   pull-requests: write
 ```
 
-`PROJECT_SETUP_PAT` remains optional and separate for GitHub Projects v2 operations. Related PR Detection and Promotion Sync do not require the Project PAT.
+This covers PR labels, milestone, assignees, comments, and backlinks.
+
+GitHub Projects v2 uses the optional separate credential:
+
+```text
+PROJECT_SETUP_PAT
+```
+
+and `PROJECT_SETUP_PROJECT_NUMBER` identifies the target Project. If either is absent, native PR metadata still synchronizes and Project synchronization is reported as skipped.
+
+## Live regression contract
+
+The protected `Q.A -> main` lane must prove all of the following against the disposable sandbox:
+
+```text
+Implementation PR Sync
+  -> labels present on PR
+  -> milestone present on PR
+  -> assignee present on PR
+  -> linked task in Project v2 / In review
+  -> non-default base branch works
+
+Promotion Sync
+  -> two real constituent PRs merged into source branch
+  -> consensus labels present on promotion PR
+  -> consensus milestone present on promotion PR
+  -> assignee union present on promotion PR
+  -> promotion PR itself in Project v2 / In review
+  -> merged promotion PR Project status -> Done
+  -> stage backlinks converge to merged
+
+Cleanup
+  -> disposable PRs/issues closed
+  -> branches removed
+  -> Project removed
+  -> milestone removed
+  -> labels removed
+  -> historical Q.A deployments cleaned
+```
+
+A sticky comment alone is never sufficient evidence that structured synchronization worked.
 
 ## Security invariants
 
-- Privileged automation executes trusted base/default-branch code.
-- PR head code is never executed with write credentials by the governance lane.
-- Fork PRs remain excluded from privileged mutations.
-- `persist-credentials` is disabled on trusted checkouts.
-- Guardrails must succeed before normal PR Sync runs.
-- PR Sync must consume live PR state after Guardrails.
-- Promotion paths route to aggregate synchronization instead of implementation-task mutation.
-- Explicit Related PR references are verified as actual merged PRs.
-- Project v2 credentials remain isolated from ordinary repository mutations.
-
-## Regression contract
-
-A new implementation PR must converge without a second event:
-
-```text
-Implementation Autofill
-  -> validate live PR
-  -> workflow_run
-  -> refetch live PR
-  -> Implementation Sync
-```
-
-A promotion PR must converge without manually constructing a fake single-task link:
-
-```text
-Related PR Detection
-  -> aggregate body Autofill
-  -> validate live promotion context
-  -> workflow_run
-  -> Promotion Sync
-  -> backlinks
-```
-
-Both branch-pattern detection and explicit body references are first-class inputs, and the branch patterns must remain replaceable through configuration.
+- privileged workflows execute trusted base/default-branch code;
+- untrusted PR head code is never executed with write credentials;
+- fork PRs are excluded from privileged mutations;
+- privileged checkouts use `persist-credentials: false`;
+- Guardrails success is required before normal synchronization;
+- live PR state is refetched after Autofill;
+- conflicts in single-valued promotion metadata are fail-safe rather than guessed;
+- Project v2 credentials remain isolated from repository-scoped mutations.
