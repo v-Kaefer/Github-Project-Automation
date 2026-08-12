@@ -12,7 +12,8 @@ from .pr_sync import (
     load_sync_config,
     project_number_from_value,
 )
-from .related_prs import apply_promotion_sync, is_promotion_context
+from .promotion_sync import apply_promotion_sync
+from .related_prs import is_promotion_context
 
 
 def load_event(path: str | os.PathLike[str]) -> dict:
@@ -37,6 +38,9 @@ def apply_routed_pr_sync(
             repo,
             event,
             config_path=config_path,
+            project_client=project_client,
+            project_number=project_number,
+            owner=owner,
             dry_run=dry_run,
         )
 
