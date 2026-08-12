@@ -1,0 +1,2 @@
+Disposable marker for issue #62 structured PR Sync smoke.
+This file exists only to create a harmless implementation diff for the end-to-end governance test.
