@@ -8,28 +8,26 @@ A regra central é:
 
 > **Autofill -> Guardrails -> PR Sync**
 
-O estado do PR sempre é lido novamente entre etapas de mutação e sincronização, evitando consumo de payload antigo do webhook.
-
-O GPA possui dois contextos:
-
-- **PR de implementação** — uma issue/task canônica;
-- **PR de promoção** — um manifesto agregado de PRs de implementação já mergeados.
+O estado do PR é relido entre etapas de mutação e sincronização para evitar stale state. O GPA possui dois contextos: PR de implementação com uma issue/task canônica e PR de promoção com manifesto agregado de Related PRs.
 
 ## Arquitetura
 
 ```mermaid
 flowchart TD
-    A[PR opened / synchronize / reopened / edited] --> G[PR metadata validation<br/>Guardrails]
-    G --> R{Contexto do PR}
+    ISSUE[Issue / task] -->|opcional antes de codar| LB[GPA Linked Branch<br/>createLinkedBranch]
+    LB --> DEV[Relação Development nativa do GitHub]
+    DEV --> IPR[PR de implementação<br/>feature/fix -> develop]
 
+    IPR --> G[PR metadata validation<br/>Guardrails]
+    G --> R{Contexto do PR}
     R -->|Implementação| IAF[Implementation Autofill<br/>branch/body -> issue/task]
     IAF --> ILIVE[Ler PR vivo]
     ILIVE --> IV[Validação de implementação]
 
     R -->|Promoção| PAF[Related PR Detection]
-    PAF --> PB[Matches pelos patterns configurados]
+    PAF --> PB[Patterns de branch configurados]
     PAF --> PE[Referências explícitas no body]
-    PAF --> PI[Referências herdadas da promoção anterior]
+    PAF --> PI[Referências herdadas de promoções]
     PB --> PM[Unir + deduplicar]
     PE --> PM
     PI --> PM
@@ -37,254 +35,166 @@ flowchart TD
     PWRITE --> PLIVE[Ler PR de promoção vivo]
     PLIVE --> PV[Validação de promoção]
 
-    IV --> V{Guardrails passou?}
-    PV --> V
-    V -- Não --> STOP[Interromper governança]
-    V -- Sim --> WR[workflow_run: Guardrails passou]
+    IV --> OK{Guardrails passou?}
+    PV --> OK
+    OK -- Não --> STOP[Interromper governança]
+    OK -- Sim --> WR[workflow_run]
 
     WR --> S[PR Sync Router]
-    L[ready_for_review<br/>converted_to_draft<br/>closed] --> S
+    LIFE[ready_for_review<br/>converted_to_draft<br/>closed] --> S
     S --> T{Contexto do PR}
 
     T -->|Implementação| IS[Implementation Sync]
     IS --> TASK[Resolver task canônica]
-    TASK --> IMETA[Sync labels / milestone / assignees do PR]
-    IMETA --> REL[Sync pai / sub-issue]
-    REL --> IPROJ[Task no Project v2 + Status]
+    TASK --> IMETA[Labels / milestone / assignees do PR]
+    IMETA --> REL[Pai / sub-issue]
+    REL --> TPROJ[Task -> Project v2]
+    TPROJ --> IPROJ[PR de implementação -> Project v2]
 
     T -->|Promoção| PS[Promotion Sync]
     PS --> MANIFEST[Ler manifesto Related PRs]
     MANIFEST --> AGG[Agregar metadata nativa]
     AGG --> PCONS[Consenso labels + milestone<br/>união de assignees]
-    PCONS --> PPR[Escrever metadata nativa na promoção]
-    PPR --> PPROJ[PR de promoção no Project v2 + Status]
-    PPROJ --> BACKLINK[Criar/atualizar backlinks por estágio]
+    PCONS --> PMETA[Metadata nativa no PR de promoção]
+    PMETA --> PPROJ[PR de promoção -> Project v2]
+    PPROJ --> BACK[Backlinks por estágio]
 
     PV -->|Q.A -> main válido| QA[Sandbox Q.A live]
-    QA --> QAR[Teste de recursos/idempotência]
-    QAR --> QAI[Teste live do Implementation PR Sync]
-    QAI --> QAP[Teste da promoção: metadata nativa + Project]
-    QAP --> QAC[Cleanup do sandbox + deployments]
+    QA --> QAR[Lifecycle de recursos]
+    QAR --> QAI[Metadata de implementação]
+    QAI --> QAIP[Task + PR de implementação no Project]
+    QAIP --> QAP[Metadata da promoção + lifecycle no Project]
+    QAP --> QAD[Linked Branch -> Development em PR não-default]
+    QAD --> QAC[Cleanup de recursos + deployments]
 ```
 
 ## Por que a ordem importa
 
-Payloads de `pull_request_target` são snapshots. O Autofill pode alterar o PR real enquanto o evento original continua com o body anterior. Por isso o GPA usa a seguinte passagem:
+Payloads de `pull_request_target` são snapshots. O Autofill pode alterar o PR real enquanto o evento original mantém o body anterior. O GPA altera o PR vivo, valida esse estado, aguarda um `workflow_run` de Guardrails bem-sucedido e então busca novamente o PR antes do Sync.
 
-1. Autofill altera o PR real pela API do GitHub.
-2. Guardrails valida o **PR vivo**.
-3. Guardrails bem-sucedido gera um `workflow_run` separado.
-4. PR Sync busca novamente o **PR vivo** antes de sincronizar.
+## Contrato de PR de implementação
 
-Esse é o mesmo tipo de stale state resolvido pelo fluxo de governança do Take Your Pills ao serializar guardrails antes de hygiene.
+PRs de implementação usam uma issue/task canônica. `Closes #N`, `Fixes #N` e `Resolves #N` continuam autoritativos para a resolução interna do GPA.
 
-## Fluxo de implementação
+Estado nativo sincronizado:
 
 ```text
-branch de implementação
-  -> resolução por branch/body
-  -> uma issue/task canônica
-  -> Autofill Linked Issue + Milestone
-  -> Guardrails
-  -> Implementation Sync
+task canônica
   -> labels / milestone / assignees no PR
+  -> relação pai/sub-issue
   -> lifecycle da task no Project v2
+  -> lifecycle do próprio PR de implementação no Project v2
 ```
 
-`Closes #N`, `Fixes #N` e `Resolves #N` já existentes continuam autoritativos.
+Task e PR usam o mesmo mapeamento de lifecycle. Isso faz o PR aparecer no campo nativo `Projects`, em vez de manter somente a issue no board.
 
-## Fluxo de promoção
+### Relação Development nativa
 
-`promotionPaths` são regras de roteamento, não regras de skip.
+Closing keywords do GitHub criam vínculo nativo apenas quando o PR aponta para a branch default. Como o lane de implementação do GPA normalmente aponta para `develop`, a referência do body é suficiente para o GPA, mas não para o sidebar Development.
 
-Caminhos versionados:
+O caminho nativo suportado pelo GPA usa Linked Branch:
+
+```text
+issue
+  -> project_setup.linked_branch / createLinkedBranch
+  -> branch de implementação vinculada à issue
+  -> abrir PR dessa branch para develop
+  -> GitHub transfere o vínculo da branch para o PR
+  -> Development mostra o PR
+```
+
+O nome da branch é definido por quem configura o repositório; não depende de `US-*`. Branches `feat/`, `fix/`, `task/` ou qualquer convenção escolhida continuam válidas. PRs comuns já existentes precisam ser vinculados manualmente pelo GitHub porque a API pública cria uma nova Linked Branch em vez de converter uma branch existente.
+
+## Contrato de promoção
+
+`promotionPaths` são regras de roteamento, não skip:
 
 ```text
 develop -> Q.A
 Q.A -> main
 ```
 
-Uma promoção representa um agregado de PRs de implementação e nunca deve escolher uma “primeira task” arbitrária como fonte de verdade.
+Uma promoção representa um conjunto de PRs de implementação e nunca escolhe uma primeira task arbitrária.
 
 ### Related PR Detection
 
-O detector une e deduplica:
+O detector une/deduplica PRs mergeados encontrados pelos regex configurados, referências explícitas do body e referências herdadas de promoções anteriores. Os patterns default (`feat/`, `fix/`, `docs/`, `refactor/`, `test/`, `hotfix/`, `phase/`, `task/`, `chore/`, `ci/`, `release/`) são exemplos amplos e substituíveis.
 
-1. PRs mergeados cujas branches de origem correspondem aos regex configurados;
-2. referências explícitas em seções como `## Related PRs`;
-3. referências de implementação herdadas de uma promoção anterior.
+Para `develop -> Q.A`, a busca automática começa depois da última promoção equivalente mergeada. Para `Q.A -> main`, o GPA herda somente os PRs constituintes das promoções que realmente chegaram em Q.A, evitando atribuir ao main trabalho que permaneceu apenas em develop.
 
-Patterns default propositalmente amplos:
+### Metadata nativa de promoção
 
-```text
-^feat/
-^fix/
-^docs/
-^refactor/
-^test/
-^hotfix/
-^phase/
-^task/
-^chore/
-^ci/
-^release/
-```
+Promotion Sync usa os objetos dos Related PRs como fonte agregada:
 
-O repositório de destino pode substituir a lista inteira via `prAutomation.relatedPrs.branchPatterns`.
+- famílias de labels gerenciadas exigem consenso;
+- milestone exige unanimidade;
+- assignees usam união deduplicada;
+- labels externas são preservadas;
+- conflitos são reportados, não adivinhados;
+- o próprio PR de promoção é item do Project v2;
+- backlinks por estágio são idempotentes.
 
-### Janela de detecção
+## Contrato do Project v2
 
-Em `develop -> Q.A`, a autodetecção começa depois da última promoção `develop -> Q.A` mergeada.
+Lifecycle padrão:
 
-Em `Q.A -> main`, o GPA considera promoções mergeadas em `Q.A` depois da última `Q.A -> main` e herda os PRs de implementação dessas promoções. Trabalho que ficou somente em `develop` não é atribuído ao `main`.
-
-Sem promoção anterior, `fallbackDays` limita a primeira busca. Referências explícitas no body não dependem dessa janela.
-
-## Promotion Autofill
-
-O Autofill de promoção pode preencher deterministicamente:
-
-- `## Related PRs`;
-- `## Linked Issue` a partir das closing references dos PRs constituintes;
-- `## Milestone` com os milestones dos PRs constituintes;
-- `## Summary` somente enquanto a seção ainda for placeholder.
-
-Resumo, evidências, riscos, testes e DoD escritos por humano são preservados.
-
-## Contrato de metadata nativa da promoção
-
-Promotion Sync usa os **objetos dos Related PRs** como fonte agregada para os campos nativos do PR de promoção.
-
-### Labels
-
-Somente famílias gerenciadas são sincronizadas. Default:
-
-```text
-type:
-priority:
-test:
-```
-
-Cada família exige **consenso**:
-
-```text
-#101 priority:high
-#102 priority:high
-#103 priority:high
-        -> promoção priority:high
-```
-
-Se houver divergência ou ausência, o GPA não escolhe um valor arbitrário. A família gerenciada é omitida do PR de promoção e o conflito aparece no comentário sticky do Promotion Sync.
-
-Labels manuais/não gerenciadas são preservadas.
-
-### Milestone
-
-Milestone também é single-value e exige consenso. Um único milestone unânime é aplicado à promoção. Ausência/divergência remove o milestone sincronizado em vez de escolher um aleatoriamente.
-
-### Assignees
-
-Assignees são multi-value. Promotion Sync aplica a união deduplicada dos assignees dos Related PRs.
-
-### Project v2
-
-Implementation Sync mantém o comportamento atual: a **issue/task vinculada** é o item de trabalho no Project v2.
-
-Promotion Sync passa a adicionar também o **próprio PR de promoção** ao Project v2, porque a promoção possui lifecycle independente de review/release.
-
-Mapeamento default:
-
-| Estado da promoção | Project Status |
+| Estado do PR | Project Status |
 | --- | --- |
 | Draft | `In progress` |
 | Open / review | `In review` |
 | Fechado sem merge | `In progress` |
 | Mergeado | `Done` |
 
-Isso é o que torna o campo nativo `Projects` do sidebar significativo para PRs de promoção quando `PROJECT_SETUP_PROJECT_NUMBER` e `PROJECT_SETUP_PAT` estão configurados.
-
-## Validação de promoção
-
-Guardrails verifica que:
-
-- head/base formam um `promotionPath` configurado;
-- existe pelo menos um PR mergeado na seção Related PR;
-- todos os PRs referenciados realmente foram mergeados;
-- Related PRs autodetectados não foram omitidos silenciosamente.
-
-Promoção possui contrato próprio; não é bypass de validação.
-
-## Roteamento do PR Sync
-
-`.github/workflows/pr-sync.yml` executa `project_setup.pr_sync_router`.
+Operações de Project usam `PROJECT_SETUP_PAT`. A resolução do board é determinística:
 
 ```text
-PR de implementação -> project_setup.pr_sync
-PR de promoção      -> project_setup.promotion_sync
+--project-number explícito
+        ↓ senão
+PROJECT_SETUP_PROJECT_NUMBER
+        ↓ senão, se houver PAT
+nome exato único == projectDefinitionFile.name
+        ↓
+zero matches -> skip com diagnóstico
+mais de um -> falha, nunca escolhe por chute
 ```
 
-`project_setup.related_prs` cuida de detecção, Autofill e validação. `project_setup.promotion_sync` cuida de metadata nativa agregada, membership/status da promoção no Project e backlinks.
+A sincronização restrita ao repositório continua funcionando quando Project não está disponível.
 
 ## Fronteira de autenticação
 
-Mutações dentro do repositório usam o token nativo do Actions:
+Mutações normais de PR/issue usam `${{ github.token }}` com permissões restritas. Projects v2 usa `PROJECT_SETUP_PAT`. A criação explícita local/live de Linked Branch também precisa de credencial com escrita no repositório, pois cria uma branch real pela API GraphQL do GitHub.
 
-```yaml
-permissions:
-  contents: read
-  issues: write
-  pull-requests: write
-```
-
-Isso cobre labels, milestone, assignees, comentários e backlinks.
-
-Projects v2 usa a credencial separada opcional:
-
-```text
-PROJECT_SETUP_PAT
-```
-
-`PROJECT_SETUP_PROJECT_NUMBER` identifica o Project. Sem um deles, a metadata nativa do PR continua funcionando e apenas a sincronização do Project é reportada como skipped.
+Workflows privilegiados executam código confiável da base/default, excluem forks das mutações privilegiadas e usam `persist-credentials: false`.
 
 ## Contrato de regressão live
 
-O lane protegido `Q.A -> main` precisa provar no sandbox descartável:
+O lane protegido `Q.A -> main` precisa provar estado nativo, não comentários:
 
 ```text
-Implementation PR Sync
-  -> labels presentes no PR
-  -> milestone presente no PR
-  -> assignee presente no PR
-  -> task vinculada no Project v2 / In review
+Metadata de implementação
+  -> labels / milestone / assignee no PR
   -> base não-default funciona
 
-Promotion Sync
-  -> dois PRs constituintes reais mergeados na branch-fonte
-  -> labels por consenso no PR de promoção
-  -> milestone por consenso no PR de promoção
-  -> união de assignees no PR de promoção
-  -> próprio PR de promoção no Project v2 / In review
-  -> após merge, Status do PR de promoção -> Done
-  -> backlinks convergem para merged
+Lifecycle de Project da implementação
+  -> task vinculada no Project / In review
+  -> próprio PR de implementação no Project / In review
+
+Lifecycle de promoção
+  -> PRs constituintes reais mergeados
+  -> metadata por consenso no PR de promoção
+  -> PR de promoção no Project / In review
+  -> promoção mergeada -> Done
+  -> backlinks convergem
+
+Development
+  -> branch criada com createLinkedBranch
+  -> PR aberto contra base não-default
+  -> PR aparece nas referências Development user-linked da issue
 
 Cleanup
   -> PRs/issues descartáveis fechados
-  -> branches removidas
-  -> Project removido
-  -> milestone removido
-  -> labels removidas
-  -> deployments Q.A históricos limpos
+  -> branches, Project, milestone e labels removidos
+  -> deployments históricos de Q.A limpos
 ```
 
-Um comentário sticky isolado nunca é evidência suficiente de que a sincronização estruturada funcionou.
-
-## Invariantes de segurança
-
-- workflows privilegiados executam código confiável da base/default branch;
-- código não confiável do head não roda com credenciais de escrita;
-- forks são excluídos das mutações privilegiadas;
-- checkouts privilegiados usam `persist-credentials: false`;
-- Guardrails precisa passar antes do Sync normal;
-- o PR vivo é lido novamente depois do Autofill;
-- conflitos de metadata single-value são tratados de forma fail-safe, sem chute;
-- credenciais de Project v2 continuam isoladas das mutações normais do repositório.
+Comentário sticky isolado nunca é aceito como prova da sincronização estruturada.
