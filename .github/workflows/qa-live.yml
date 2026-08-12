@@ -23,7 +23,7 @@ jobs:
   live-sandbox:
     name: qa-live-gate
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     environment:
       name: qa
       deployment: false
@@ -87,5 +87,14 @@ jobs:
           PROJECT_SETUP_PAT: ${{ secrets.QA_PROJECT_SETUP_PAT }}
         run: >-
           python tests/qa/live_promotion_sync.py
+          --repo "$QA_REPOSITORY"
+          --run-id "pr-${{ inputs.pr_number }}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+      - name: Run live Development linked-branch test
+        env:
+          QA_REPOSITORY: ${{ vars.QA_REPOSITORY }}
+          PROJECT_SETUP_PAT: ${{ secrets.QA_PROJECT_SETUP_PAT }}
+        run: >-
+          python tests/qa/live_linked_branch.py
           --repo "$QA_REPOSITORY"
           --run-id "pr-${{ inputs.pr_number }}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
