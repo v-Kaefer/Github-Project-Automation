@@ -4,32 +4,36 @@
 
 **Implemented.**
 
-PR Sync is GPA's post-Guardrails synchronization lane. It now supports two distinct contexts:
+PR Sync is GPA's post-Guardrails synchronization lane. The public workflow is `.github/workflows/pr-sync.yml`; `project_setup.pr_sync_router` selects one of two modes:
 
-- **Implementation Sync** — one canonical linked issue/task;
-- **Promotion Sync** — an aggregate manifest of related pull requests.
+```text
+Implementation PR -> project_setup.pr_sync
+Promotion PR      -> project_setup.promotion_sync
+```
 
-The public workflow remains `.github/workflows/pr-sync.yml`, while `project_setup/pr_sync_router.py` chooses the correct synchronization mode.
+Normal synchronization runs only after successful Guardrails through `workflow_run`, and each path refetches live PR state instead of relying on an Autofill-mutated webhook payload.
 
 ## Pipeline
 
 ```text
 PR event
   -> Autofill
-  -> Guardrails
+  -> live Guardrails
   -> workflow_run on success
   -> PR Sync Router
        -> Implementation Sync
        -> Promotion Sync
 ```
 
-PR Sync never relies on an Autofill-mutated copy of the original webhook payload. Normal post-Guardrails execution refetches the live pull request.
+Lifecycle events that need a direct transition also enter the router:
+
+- `ready_for_review`;
+- `converted_to_draft`;
+- `closed`.
 
 ## Implementation Sync
 
-Implementation PRs use `project_setup/pr_sync.py`.
-
-The linked issue/task is identified by a closing reference:
+Implementation PRs identify one canonical linked issue/task with:
 
 ```text
 Closes #123
@@ -37,30 +41,19 @@ Fixes #123
 Resolves #123
 ```
 
-The linked task can provide:
+The task can drive:
 
-- configured label families;
-- milestone;
-- assignees;
-- parent/sub-issue relationship;
-- optional Project v2 membership/status.
+- configured PR label families;
+- PR milestone;
+- PR assignees;
+- parent/sub-issue linkage;
+- task Project v2 membership/status.
 
-If the task has no assignee and `assignAuthorWhenTaskUnassigned` is enabled, the PR author can be assigned to the task and synchronized to the PR.
-
-### Default Project lifecycle
-
-| Pull request state | Project status target |
-| --- | --- |
-| Draft / converted to draft | `In progress` |
-| Ready for review / validated open PR | `In review` |
-| Closed without merge | `In progress` |
-| Merged | `Done` |
-
-Project v2 operations remain optional and use `PROJECT_SETUP_PAT`. Ordinary PR/issue mutations use the built-in Actions token.
+When the task has no assignee and `assignAuthorWhenTaskUnassigned` is enabled, the PR author can be assigned to both the task and PR.
 
 ## Promotion Sync
 
-Promotion paths are not skipped anymore at the workflow level. They route to aggregate Promotion Sync.
+Promotion paths are not skipped. They route to aggregate synchronization.
 
 Committed paths:
 
@@ -69,37 +62,57 @@ develop -> Q.A
 Q.A -> main
 ```
 
-Promotion Sync does **not** select an arbitrary first issue/task. It reads the promotion PR's `## Related PRs` manifest and maintains idempotent backlinks from those related PRs to the current promotion.
+The promotion's `## Related PRs` manifest is authoritative after Guardrails. Promotion Sync never selects the first linked issue as a fake canonical task.
 
-For example:
+It performs four responsibilities:
+
+1. aggregate GitHub-native metadata from all constituent PRs;
+2. apply that metadata to the promotion PR;
+3. add/update the promotion PR itself in Project v2 when configured;
+4. maintain stage-specific backlinks on constituent PRs.
+
+### Native metadata aggregation
+
+Configured managed label families use consensus. Defaults:
 
 ```text
-feature/fix PRs -> develop
-        |
-        v
-develop -> Q.A promotion
-        |
-        v
-Promotion Sync backlinks related implementation PRs to Q.A
-        |
-        v
-Q.A -> main promotion
-        |
-        v
-Promotion Sync records the main-stage linkage
+type:
+priority:
+test:
 ```
 
-Related PR discovery and promotion-body Autofill happen before Guardrails in `project_setup.related_prs`; see `pr-governance-architecture.md`.
+If every related PR has the same single value for a family, the promotion receives that label. Missing/conflicting values result in no managed label for that family; the sticky Promotion Sync comment reports the conflict. Unmanaged labels already on the promotion are preserved.
+
+Milestone also requires unanimous agreement. A conflict or missing milestone does not cause GPA to pick one arbitrarily.
+
+Assignees are multi-valued and therefore use the deduplicated union of all related PR assignees.
+
+### Promotion Project v2 membership
+
+Implementation Sync keeps tasks as Project work items. Promotion Sync additionally adds the **promotion PR itself** to the configured Project so the promotion/release lifecycle can be represented and the PR's native `Projects` sidebar can show membership.
+
+Default lifecycle:
+
+| PR state | Project status |
+| --- | --- |
+| Draft | `In progress` |
+| Open / review | `In review` |
+| Closed without merge | `In progress` |
+| Merged | `Done` |
+
+Project operations require both `PROJECT_SETUP_PAT` and `PROJECT_SETUP_PROJECT_NUMBER`. Repository-scoped metadata still synchronizes if Project configuration is absent.
 
 ## Related PR Detection
 
+`project_setup.related_prs` owns promotion discovery, Autofill, and validation.
+
 The detector unions and deduplicates:
 
-1. merged PRs whose head branch matches configured branch regexes;
-2. PR references explicitly provided in configured body sections;
-3. references inherited from earlier promotion PRs merged into the current promotion source branch.
+1. merged PRs whose head branch matches configured regexes;
+2. explicit references in configured body sections;
+3. references inherited from earlier promotion PRs.
 
-Default branch patterns are deliberately broad configuration examples:
+Default patterns are broad examples:
 
 ```text
 ^feat/
@@ -115,7 +128,7 @@ Default branch patterns are deliberately broad configuration examples:
 ^release/
 ```
 
-A repository can replace the entire list. Explicit body references remain valid even when a referenced PR does not match those patterns.
+Repositories may replace the entire list in `project_setup.json`.
 
 ## Configuration
 
@@ -168,19 +181,7 @@ A repository can replace the entire list. Explicit body references remain valid 
 }
 ```
 
-`promotionPaths` are routing rules. The committed configuration no longer exposes `skipPromotionPullRequests`.
-
-## Event model
-
-Normal synchronization runs from `workflow_run` after `PR metadata validation` succeeds.
-
-Lifecycle events that need a direct transition also enter the router through `pull_request_target`:
-
-- `ready_for_review`;
-- `converted_to_draft`;
-- `closed`.
-
-Both paths execute trusted base-branch automation. Fork PRs are excluded from privileged mutations.
+The same `syncLabels`, `syncMilestone`, `syncAssignees`, and `syncProject` flags apply to implementation and promotion modes; promotion mode changes the aggregation semantics, not the configuration surface.
 
 ## Authentication and permissions
 
@@ -193,42 +194,29 @@ permissions:
   pull-requests: write
 ```
 
-`PROJECT_SETUP_PAT` is reserved for optional GitHub Projects v2 operations. Promotion detection, promotion Autofill, promotion validation, and promotion backlinks require only repository-scoped permissions.
+`PROJECT_SETUP_PAT` is reserved for optional GitHub Projects v2 operations.
 
 ## Idempotency
 
-Implementation Sync converges without duplicating labels, assignees, Project membership, parent/sub-issue links, or its marked status comment.
+Implementation Sync converges without duplicating labels, assignees, Project membership, parent relationships, or its marked status comment.
 
-Promotion Sync uses stage-specific marked backlink comments so repeated runs update existing promotion linkage instead of adding duplicates.
+Promotion Sync:
 
-## Security model
+- replaces only managed label families while preserving unmanaged labels;
+- converges milestone to the aggregate consensus;
+- adds missing assignees without duplicates;
+- reuses existing Project membership when visible;
+- updates lifecycle Status on the same Project item;
+- updates stage-specific backlink/sticky comments rather than appending duplicates.
 
-- trusted base/default-branch automation only;
-- no untrusted head code runs with write credentials;
-- `persist-credentials: false` on privileged checkouts;
-- Guardrails success is required before normal synchronization;
-- live PR state is refetched between state-changing and state-consuming stages;
-- related PR references are validated as real merged PRs before promotion;
-- Project v2 credentials stay isolated from ordinary repository mutations.
+## Live validation
 
-## Installation
+The protected `Q.A -> main` live lane validates three increasingly complete layers:
 
-The installer distributes `.github/workflows/pr-sync.yml`, while Python modules under `project_setup/*.py` include:
+1. resource create/update/idempotency/cleanup;
+2. Implementation PR Sync on a non-default base branch;
+3. Promotion Sync with real merged constituent PRs.
 
-```text
-pr_sync.py
-pr_sync_router.py
-related_prs.py
-```
+The promotion smoke fails unless the **promotion PR object itself** has native labels, milestone, assignees, Project v2 membership/status, and correct merged lifecycle convergence. A successful sticky comment alone is not accepted as evidence.
 
-Existing target files remain subject to the installer's preserve-by-default behavior.
-
-## Validation
-
-Coverage is split between:
-
-- `tests/test_pr_sync.py` — implementation synchronization and workflow safety;
-- `tests/test_pr_sync_autofill.py` — implementation Autofill ordering;
-- `tests/test_related_prs.py` — branch/body related-PR detection, configurable patterns, promotion-body aggregation, and router dispatch.
-
-Live Project v2 and Q.A integration behavior remain sandbox concerns rather than destructive source-repository tests.
+See `pr-governance-architecture.md` for the Mermaid execution model.
