@@ -23,7 +23,7 @@ jobs:
   live-sandbox:
     name: qa-live-gate
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     environment:
       name: qa
       deployment: false
@@ -78,5 +78,14 @@ jobs:
           PROJECT_SETUP_PAT: ${{ secrets.QA_PROJECT_SETUP_PAT }}
         run: >-
           python tests/qa/live_pr_sync.py
+          --repo "$QA_REPOSITORY"
+          --run-id "pr-${{ inputs.pr_number }}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+      - name: Run live Promotion Sync native metadata test
+        env:
+          QA_REPOSITORY: ${{ vars.QA_REPOSITORY }}
+          PROJECT_SETUP_PAT: ${{ secrets.QA_PROJECT_SETUP_PAT }}
+        run: >-
+          python tests/qa/live_promotion_sync.py
           --repo "$QA_REPOSITORY"
           --run-id "pr-${{ inputs.pr_number }}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
