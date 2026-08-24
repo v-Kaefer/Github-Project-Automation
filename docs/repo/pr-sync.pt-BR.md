@@ -4,102 +4,111 @@
 
 **Implementado.**
 
-PR Sync é o fluxo de sincronização executado após Guardrails no GPA. Ele agora possui dois contextos distintos:
-
-- **Implementation Sync** — uma issue/task canônica;
-- **Promotion Sync** — um manifesto agregado de pull requests relacionados.
-
-O workflow público continua sendo `.github/workflows/pr-sync.yml`, enquanto `project_setup/pr_sync_router.py` escolhe o modo correto.
-
-## Pipeline
+PR Sync é o lane de sincronização pós-Guardrails do GPA. O workflow público é `.github/workflows/pr-sync.yml`; `project_setup.pr_sync_router` escolhe entre:
 
 ```text
-Evento de PR
-  -> Autofill
-  -> Guardrails
-  -> workflow_run em caso de sucesso
-  -> PR Sync Router
-       -> Implementation Sync
-       -> Promotion Sync
+PR de implementação -> project_setup.pr_sync + membership do PR no Project
+PR de promoção      -> project_setup.promotion_sync
 ```
 
-PR Sync não depende de uma cópia alterada do payload original. No fluxo normal pós-Guardrails, o pull request vivo é buscado novamente.
+A sincronização normal ocorre somente após Guardrails bem-sucedido via `workflow_run`, sempre relendo o PR vivo.
+
+## Arquitetura
+
+```mermaid
+flowchart TD
+    I[Issue / task] --> LB[Criação opcional de Linked Branch pelo GPA]
+    LB --> DEV[Relação Development nativa do GitHub]
+    DEV --> IP[PR de implementação]
+    I --> AF[Autofill]
+    IP --> AF
+    AF --> G[Guardrails no PR vivo]
+    G -->|sucesso| W[workflow_run]
+    W --> R[PR Sync Router]
+
+    R -->|Implementação| IS[Implementation Sync]
+    IS --> META[Labels / milestone / assignees]
+    IS --> TASK[Task -> Project v2]
+    IS --> IPR[PR de implementação -> Project v2]
+
+    R -->|Promoção| PS[Promotion Sync]
+    PS --> AGG[Agregar metadata dos Related PRs]
+    AGG --> PPR[Metadata nativa no PR de promoção]
+    PS --> PPROJ[PR de promoção -> Project v2]
+    PS --> BACK[Backlinks por estágio]
+```
+
+Eventos `ready_for_review`, `converted_to_draft` e `closed` também entram diretamente no router para transições de lifecycle.
 
 ## Implementation Sync
 
-PRs de implementação usam `project_setup/pr_sync.py`.
+PRs de implementação identificam uma issue/task canônica por `Closes #123`, `Fixes #123` ou `Resolves #123`. A task dirige famílias configuradas de labels, milestone, assignees, relação pai/sub-issue e membership/status da task no Project v2.
 
-A issue/task vinculada é identificada por closing reference:
+Quando Project v2 está habilitado, **a task vinculada e o próprio PR de implementação são itens do Project**. Assim o campo nativo `Projects` do sidebar do PR representa o lifecycle de review, em vez de acompanhar somente a task.
 
-```text
-Closes #123
-Fixes #123
-Resolves #123
+Lifecycle padrão:
+
+| Estado do PR | Project Status |
+| --- | --- |
+| Draft | `In progress` |
+| Open / review | `In review` |
+| Fechado sem merge | `In progress` |
+| Mergeado | `Done` |
+
+## Development nativo em PR para branch não-default
+
+O GitHub interpreta closing keywords como vínculo nativo de issue somente quando o PR aponta para a branch default. Como o fluxo normal do GPA é `feature/fix -> develop`, `Closes #123` continua sendo a referência canônica usada pelo GPA, mas sozinho não consegue preencher o campo `Development` do GitHub.
+
+Para obter o vínculo Development nativo, crie a branch de implementação como uma **Linked Branch** antes de abrir o PR:
+
+```bash
+python -m project_setup.linked_branch \
+  --repo owner/repository \
+  --issue 123 \
+  --branch feat/issue-123-exemplo \
+  --base develop \
+  --live
 ```
 
-A task pode fornecer:
+O nome da branch é definido pelo usuário; o GPA não exige `US-*` nem uma convenção única. Quando essa branch é usada para abrir o PR, o GitHub transfere o vínculo da Linked Branch para o PR, inclusive quando a base do PR não é a branch default.
 
-- famílias configuradas de labels;
-- milestone;
-- assignees;
-- relação pai/sub-issue;
-- membership/status opcional no Project v2.
-
-Se a task estiver sem assignee e `assignAuthorWhenTaskUnassigned` estiver habilitado, o autor do PR pode ser atribuído à task e sincronizado com o PR.
-
-### Lifecycle padrão no Project
-
-| Estado do PR | Status alvo |
-| --- | --- |
-| Draft / convertido para draft | `In progress` |
-| Ready for review / PR validado e aberto | `In review` |
-| Fechado sem merge | `In progress` |
-| Merged | `Done` |
-
-Operações de Project v2 continuam opcionais e usam `PROJECT_SETUP_PAT`. Mutações comuns de PR/issues usam o token nativo do Actions.
+Uma branch/PR comum que já exista não pode ser convertida retroativamente em Linked Branch por este helper; para PR existente, use o vínculo manual no campo Development da interface do GitHub.
 
 ## Promotion Sync
 
-Promotion paths não são mais ignorados pelo workflow. Eles são roteados para Promotion Sync agregado.
-
-Caminhos versionados:
+Promotion paths não são pulados. Os caminhos versionados são:
 
 ```text
 develop -> Q.A
 Q.A -> main
 ```
 
-Promotion Sync **não** seleciona uma primeira issue/task arbitrária. Ele lê o manifesto `## Related PRs` e mantém backlinks idempotentes entre os PRs relacionados e a promoção atual.
+Promotion Sync lê o manifesto validado `## Related PRs` e nunca escolhe a primeira issue como falsa task canônica. Ele:
 
-Exemplo:
+1. agrega metadata nativa dos PRs constituintes;
+2. aplica labels/milestone por consenso e assignees por união no próprio PR de promoção;
+3. adiciona/atualiza o PR de promoção no Project v2;
+4. mantém backlinks específicos por estágio.
 
-```text
-feature/fix PRs -> develop
-        |
-        v
-develop -> Q.A
-        |
-        v
-Promotion Sync registra os PRs relacionados em Q.A
-        |
-        v
-Q.A -> main
-        |
-        v
-Promotion Sync registra o vínculo com main
-```
+Famílias de labels gerenciadas usam consenso; defaults: `type:`, `priority:` e `test:`. Valor ausente/conflitante é relatado, não adivinhado. Milestone também exige unanimidade. Assignees usam união deduplicada.
 
-A descoberta de PRs e o Autofill do body de promoção acontecem antes de Guardrails em `project_setup.related_prs`; consulte `pr-governance-architecture.pt-BR.md`.
+## Resolução do Project v2
+
+Operações de Project exigem `PROJECT_SETUP_PAT`. O GPA resolve o board alvo nesta ordem:
+
+1. `--project-number` explícito;
+2. `PROJECT_SETUP_PROJECT_NUMBER`;
+3. se houver Project PAT, busca por **um único Project com nome exatamente igual** ao `name` de `projectDefinitionFile`.
+
+Se não existir Project com esse nome, o GPA não altera Project e registra diagnóstico. Se houver mais de um com o mesmo nome, ele falha em vez de escolher arbitrariamente. Assim `PROJECT_SETUP_PROJECT_NUMBER` passa a ser opcional quando o board configurado já existe com nome único.
+
+Labels, milestone, assignees, Related PRs e backlinks continuam funcionando sem configuração de Project.
 
 ## Related PR Detection
 
-O detector une e deduplica:
+`project_setup.related_prs` é responsável por descoberta, Autofill e validação da promoção. Ele une/deduplica PRs mergeados cujas branches correspondem aos regex configurados, referências explícitas do body e referências herdadas de promoções anteriores.
 
-1. PRs mergeados cuja branch head corresponde aos regexes configurados;
-2. referências de PR explicitamente informadas em seções configuradas do body;
-3. referências herdadas de promotion PRs anteriores mergeados na branch-fonte atual.
-
-Os patterns default são propositalmente amplos como exemplos:
+Patterns default são exemplos amplos e totalmente substituíveis:
 
 ```text
 ^feat/
@@ -115,8 +124,6 @@ Os patterns default são propositalmente amplos como exemplos:
 ^release/
 ```
 
-O repositório pode substituir a lista inteira. Referências explícitas no body continuam válidas mesmo quando a branch do PR referenciado não corresponde aos patterns.
-
 ## Configuração
 
 ```json
@@ -125,17 +132,8 @@ O repositório pode substituir a lista inteira. Referências explícitas no body
     "relatedPrs": {
       "enabled": true,
       "branchPatterns": [
-        "^feat/",
-        "^fix/",
-        "^docs/",
-        "^refactor/",
-        "^test/",
-        "^hotfix/",
-        "^phase/",
-        "^task/",
-        "^chore/",
-        "^ci/",
-        "^release/"
+        "^feat/", "^fix/", "^docs/", "^refactor/", "^test/",
+        "^hotfix/", "^phase/", "^task/", "^chore/", "^ci/", "^release/"
       ],
       "bodySections": ["Related PRs", "Related Pull Requests"],
       "includeBranchMatches": true,
@@ -168,67 +166,23 @@ O repositório pode substituir a lista inteira. Referências explícitas no body
 }
 ```
 
-`promotionPaths` agora são regras de roteamento. A configuração versionada não expõe mais `skipPromotionPullRequests`.
+## Autenticação e segurança
 
-## Modelo de eventos
+Sincronização restrita ao repositório usa `${{ github.token }}`. `PROJECT_SETUP_PAT` permanece reservado ao Projects v2 e a operações locais/live explicitamente solicitadas que exigem capacidade no escopo do usuário, como criar Linked Branches.
 
-Sincronização normal roda por `workflow_run` depois de `PR metadata validation` concluir com sucesso.
+Actions privilegiadas continuam executando código confiável da base/default; código não confiável do head não roda com credenciais de escrita.
 
-Eventos de lifecycle que exigem transição direta também entram pelo router via `pull_request_target`:
+## Validação live
 
-- `ready_for_review`;
-- `converted_to_draft`;
-- `closed`.
+O lane protegido `Q.A -> main` agora exige:
 
-Os dois caminhos usam automação confiável da base. Forks são excluídos das mutações privilegiadas.
+1. lifecycle dos recursos descartáveis;
+2. metadata de implementation PR contra base não-default;
+3. **task e próprio implementation PR** com membership/status no Project v2;
+4. PR de promoção com metadata nativa e lifecycle no Project;
+5. uma Linked Branch real tornando-se PR nativamente ligado em Development contra base não-default;
+6. cleanup completo.
 
-## Autenticação e permissões
+Comentário sticky, sozinho, nunca é evidência suficiente: os testes releem os objetos nativos do GitHub e o estado do Project.
 
-Sincronização restrita ao repositório usa `${{ github.token }}` com:
-
-```yaml
-permissions:
-  contents: read
-  issues: write
-  pull-requests: write
-```
-
-`PROJECT_SETUP_PAT` fica reservado às operações opcionais de GitHub Projects v2. Related PR Detection, Autofill/validação de promoção e backlinks não dependem desse PAT.
-
-## Idempotência
-
-Implementation Sync converge sem duplicar labels, assignees, Project membership, relações pai/sub-issue ou comentário marcado.
-
-Promotion Sync usa comentários marcados específicos por estágio, de forma que execuções repetidas atualizam o vínculo existente em vez de criar duplicatas.
-
-## Modelo de segurança
-
-- somente automação confiável da base/default branch;
-- nenhum código não confiável do head roda com credenciais de escrita;
-- `persist-credentials: false` nos checkouts privilegiados;
-- sucesso de Guardrails é obrigatório antes da sincronização normal;
-- estado vivo do PR é buscado novamente entre etapas que alteram e consomem estado;
-- Related PRs são validados como PRs realmente mergeados antes da promoção;
-- credenciais do Project v2 ficam isoladas das mutações comuns do repositório.
-
-## Instalação
-
-O instalador distribui `.github/workflows/pr-sync.yml`. Os módulos Python sob `project_setup/*.py` incluem:
-
-```text
-pr_sync.py
-pr_sync_router.py
-related_prs.py
-```
-
-Arquivos existentes no target continuam sujeitos ao comportamento preserve-by-default do instalador.
-
-## Validação
-
-A cobertura fica dividida em:
-
-- `tests/test_pr_sync.py` — sincronização de implementação e segurança do workflow;
-- `tests/test_pr_sync_autofill.py` — ordenação do Autofill de implementação;
-- `tests/test_related_prs.py` — detecção por branch/body, patterns configuráveis, agregação do body de promoção e dispatch do router.
-
-Comportamento live de Project v2 e integração Q.A continuam responsabilidades do sandbox, não de testes destrutivos no repositório-fonte.
+Veja `pr-governance-architecture.pt-BR.md` para o modelo geral de governança.
