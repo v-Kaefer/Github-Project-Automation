@@ -12,6 +12,10 @@
 
 The project focuses on safe setup of labels, milestones, issues, sub-issues, pull-request guardrails, **PR Sync**, repository discovery, and GitHub Projects v2. Remote mutating commands default to dry-run and require an explicit live mode before writing to GitHub.
 
+GitHub App authentication is the recommended production credential for organization Projects, cross-repository automation, and optional native rulesets. PATs and `gh auth` remain compatibility fallbacks. Rulesets are never applied automatically: run `project-setup rulesets plan`, then explicitly confirm the returned plan ID with `rulesets apply --live --confirm <id>`.
+
+For Actions, store the numeric App ID in `PROJECT_SETUP_APP_ID` and the entire private key in `PROJECT_SETUP_APP_PRIVATE_KEY`; installed workflows mint a short-lived installation token. For the local CLI, set the same App ID and `PROJECT_SETUP_APP_PRIVATE_KEY_FILE`, then install `github-project-setup[app]`. The App needs only the permissions required by enabled features; repository administration is required only for rulesets.
+
 If an AI assistant will perform or guide the setup, give it [`AI_SETUP_GUIDE.md`](AI_SETUP_GUIDE.md). That file tells the agent to inspect existing repository conventions before asking questions, pause at manual/credential/live checkpoints, re-verify user changes before continuing, and avoid duplicate resources.
 
 ## 1. Overview

@@ -5,6 +5,9 @@
   "projectDefinitionFile": "config/project/project-definition.json",
   "backlogManifestFile": "config/stories/backlog-manifest.json",
   "secretName": "PROJECT_SETUP_PAT",
+  "governance": {
+    "rulesetsFile": "config/governance/rulesets.json"
+  },
   "prAutomation": {
     "relatedPrs": {
       "enabled": true,

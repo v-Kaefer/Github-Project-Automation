@@ -12,6 +12,7 @@ from typing import Any
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import UTC, datetime, timedelta
 
 
 API_BASE = "https://api.github.com"
@@ -98,8 +99,70 @@ def get_gh_auth_status() -> GhAuthStatus:
     return GhAuthStatus(True, result.returncode == 0, detail)
 
 
-def get_token_source() -> tuple[str | None, str]:
+def _app_private_key() -> str | None:
+    key = os.environ.get("PROJECT_SETUP_APP_PRIVATE_KEY")
+    if key and key.strip():
+        return key.strip()
+    filename = os.environ.get("PROJECT_SETUP_APP_PRIVATE_KEY_FILE")
+    if filename and filename.strip():
+        return Path(filename).expanduser().read_text(encoding="utf-8").strip()
+    return None
+
+
+def app_is_configured() -> bool:
     load_env_file()
+    return bool(os.environ.get("PROJECT_SETUP_APP_ID", "").strip() and _app_private_key())
+
+
+def _app_installation_token(repo: str | None) -> str | None:
+    if not app_is_configured():
+        return None
+    app_id = os.environ["PROJECT_SETUP_APP_ID"].strip()
+    try:
+        import jwt
+    except ImportError as exc:
+        raise SystemExit(
+            "GitHub App authentication requires the optional dependency. "
+            "Install GPA with `pip install github-project-setup[app]`."
+        ) from exc
+    now = datetime.now(UTC)
+    app_jwt = jwt.encode(
+        {"iat": int((now - timedelta(seconds=60)).timestamp()), "exp": int((now + timedelta(minutes=9)).timestamp()), "iss": app_id},
+        _app_private_key(),
+        algorithm="RS256",
+    )
+    app_client = GitHubClient(app_jwt)
+    installation_id = os.environ.get("PROJECT_SETUP_APP_INSTALLATION_ID", "").strip()
+    if not installation_id:
+        if not repo:
+            raise SystemExit(
+                "GitHub App authentication needs --repo/GITHUB_REPOSITORY or PROJECT_SETUP_APP_INSTALLATION_ID."
+            )
+        installation = app_client.request_json("GET", f"{API_BASE}/repos/{repo}/installation")
+        installation_id = str(installation.get("id") or "")
+    if not installation_id:
+        raise SystemExit("Could not resolve the GitHub App installation. Check App installation access.")
+    response = app_client.request_json("POST", f"{API_BASE}/app/installations/{installation_id}/access_tokens", {})
+    token = str(response.get("token") or "")
+    if not token:
+        raise SystemExit("GitHub App did not return an installation access token.")
+    return token
+
+
+def get_token_source(repo: str | None = None) -> tuple[str | None, str]:
+    load_env_file()
+    mode = os.environ.get("PROJECT_SETUP_AUTH", "auto").strip().lower() or "auto"
+    if mode not in {"auto", "app", "token"}:
+        raise ValueError("PROJECT_SETUP_AUTH must be auto, app, or token")
+    workflow_token = os.environ.get("PROJECT_SETUP_TOKEN", "").strip()
+    if workflow_token:
+        return workflow_token, "github-app" if mode == "app" else "PROJECT_SETUP_TOKEN"
+    if mode in {"auto", "app"} and app_is_configured():
+        token = _app_installation_token(repo)
+        if token:
+            return token, "github-app"
+    if mode == "app":
+        return None, "github-app-missing"
     for variable in ("GITHUB_TOKEN", "GH_TOKEN", "PROJECT_SETUP_PAT"):
         token = os.environ.get(variable)
         if token and token.strip():
@@ -115,8 +178,8 @@ def get_token_source() -> tuple[str | None, str]:
     return (token, "gh") if token else (None, "gh-invalid")
 
 
-def get_token() -> str | None:
-    return get_token_source()[0]
+def get_token(repo: str | None = None) -> str | None:
+    return get_token_source(repo)[0]
 
 
 def get_project_pat() -> str | None:
@@ -237,8 +300,8 @@ class GitHubClient:
         return self.request_json("DELETE", f"{API_BASE}/repos/{repo}/issues/comments/{comment_id}")
 
 
-def require_client() -> GitHubClient:
-    token, source = get_token_source()
+def require_client(repo: str | None = None) -> GitHubClient:
+    token, source = get_token_source(repo)
     if not token:
         gh = get_gh_auth_status()
         gh_guidance = (
@@ -247,7 +310,7 @@ def require_client() -> GitHubClient:
         raise SystemExit(
             "No GitHub token is available.\n"
             f"{gh_guidance}"
-            "Fix: copy .env.example to .env and set PROJECT_SETUP_PAT, set GITHUB_TOKEN/GH_TOKEN, "
+            "Fix: configure PROJECT_SETUP_APP_ID and a private key (recommended), set PROJECT_SETUP_PAT, set GITHUB_TOKEN/GH_TOKEN, "
             "or repair the CLI session with `gh auth login`."
         )
     if source == "gh-invalid":
@@ -255,7 +318,10 @@ def require_client() -> GitHubClient:
     return GitHubClient(token)
 
 
-def require_project_client() -> GitHubClient:
+def require_project_client(repo: str | None = None) -> GitHubClient:
+    token, source = get_token_source(repo)
+    if source == "github-app" and token:
+        return GitHubClient(token)
     token = get_project_pat()
     if not token:
         raise SystemExit(

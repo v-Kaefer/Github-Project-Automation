@@ -33,6 +33,7 @@ from .project import (
 )
 from .pr_validation import upsert_validation_comment, validate_pull_request
 from .runner import load_project_setup_config, run_project_setup
+from .rulesets import apply_rulesets, plan_rulesets
 
 
 def repo_arg(value: str | None) -> str:
@@ -50,6 +51,20 @@ def optional_client() -> GitHubClient | None:
     return GitHubClient(token) if (token := get_token()) else None
 
 
+def cmd_rulesets_plan(args: argparse.Namespace) -> int:
+    repository = repo_arg(args.repo)
+    plan_rulesets(require_client(repository), repository, args.file)
+    return 0
+
+
+def cmd_rulesets_apply(args: argparse.Namespace) -> int:
+    if not args.live:
+        raise SystemExit("Rulesets are never applied by default. Use --live --confirm <plan-id> after reviewing `rulesets plan`.")
+    repository = repo_arg(args.repo)
+    apply_rulesets(require_client(repository), repository, args.file, args.confirm or "")
+    return 0
+
+
 def cmd_init(args: argparse.Namespace) -> int:
     install_repository(
         args.target,
@@ -65,7 +80,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     config_path = Path(args.config)
     environment_path = load_env_file()
     project_pat = get_project_pat()
-    github_token, token_source = get_token_source()
+    github_token, token_source = get_token_source(os.getenv("GITHUB_REPOSITORY"))
     gh_status = get_gh_auth_status()
     failures = 0
     owner_type_error: str | None = None
@@ -85,6 +100,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     print(f"github_repository={os.getenv('GITHUB_REPOSITORY') or 'missing'}")
     print(f"project_owner_type={project_owner_type or 'auto-detect'}")
     print(f"github_token={'configured' if github_token else 'missing'} source={token_source}")
+    print(f"github_app={'configured' if os.getenv('PROJECT_SETUP_APP_ID') else 'missing'}")
     print(f"project_setup_pat={'configured' if project_pat else 'missing'}")
     print(f"gh_cli={'installed' if gh_status.installed else 'missing'}")
     print(f"gh_auth={'valid' if gh_status.authenticated else 'invalid' if gh_status.installed else 'not-installed'}")
@@ -103,11 +119,9 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         print("  Fix: run `gh auth login`, or continue with a valid token configured in .env.")
     if not github_token:
         print("WARNING: no GitHub authentication is available for live repository operations.")
-        print("  Fix: set PROJECT_SETUP_PAT in .env, set GITHUB_TOKEN/GH_TOKEN, or run `gh auth login`.")
+        print("  Fix: configure the recommended GitHub App, set PROJECT_SETUP_PAT/GITHUB_TOKEN/GH_TOKEN, or run `gh auth login`.")
     if not project_pat:
-        print("INFO: PROJECT_SETUP_PAT is required only for GitHub Projects v2 creation or synchronization.")
-        print("  Setup: Settings > Developer settings > Personal access tokens > Tokens (classic).")
-        print("  Required scopes: repo and project. Save the token as PROJECT_SETUP_PAT in .env.")
+        print("INFO: GitHub App authentication is recommended for Projects v2 and governance. PROJECT_SETUP_PAT remains a fallback.")
 
     print("==> Configuration")
     print(f"config={config_path.resolve()}")
@@ -168,7 +182,7 @@ def cmd_issues_generate(args: argparse.Namespace) -> int:
 
 
 def cmd_project_create(args: argparse.Namespace) -> int:
-    client = GitHubClient("") if args.dry_run else require_project_client()
+    client = GitHubClient("") if args.dry_run else require_project_client(repo_arg(args.repo))
     create_project(
         client,
         repo_arg(args.repo),
@@ -181,7 +195,7 @@ def cmd_project_create(args: argparse.Namespace) -> int:
 
 def cmd_project_sync(args: argparse.Namespace) -> int:
     repository = repo_arg(args.repo)
-    if args.dry_run and not get_project_pat():
+    if args.dry_run and not (get_project_pat() or os.getenv("PROJECT_SETUP_APP_ID")):
         definition = load_project_definition(args.file)
         target_owner = args.owner or repository.split("/", 1)[0]
         owner_type = configured_owner_type(args.owner_type)
@@ -197,7 +211,7 @@ def cmd_project_sync(args: argparse.Namespace) -> int:
         print("Fix: configure PROJECT_SETUP_PAT to run a remote dry-run comparison.")
         return 0
     sync_project(
-        require_project_client(),
+        require_project_client(repository),
         repository,
         args.file,
         args.project_number,
@@ -402,6 +416,19 @@ def build_parser() -> argparse.ArgumentParser:
     validate_pr.add_argument("--pr-number", type=int)
     validate_pr.add_argument("--comment", action="store_true")
     validate_pr.set_defaults(func=cmd_validate_pr)
+
+    rulesets = subcommands.add_parser("rulesets", help="Plan or reconcile explicitly declared native repository rulesets")
+    rulesets_sub = rulesets.add_subparsers(dest="rulesets_command", required=True)
+    rulesets_plan = rulesets_sub.add_parser("plan", help="Read and compare rulesets without changes")
+    rulesets_plan.add_argument("--repo")
+    rulesets_plan.add_argument("--file", default="config/governance/rulesets.json")
+    rulesets_plan.set_defaults(func=cmd_rulesets_plan)
+    rulesets_apply = rulesets_sub.add_parser("apply", help="Apply a reviewed ruleset plan")
+    rulesets_apply.add_argument("--repo")
+    rulesets_apply.add_argument("--file", default="config/governance/rulesets.json")
+    rulesets_apply.add_argument("--confirm", help="Plan ID printed by `rulesets plan`")
+    rulesets_apply.add_argument("--live", action="store_true", help="Authorize the reviewed ruleset changes")
+    rulesets_apply.set_defaults(func=cmd_rulesets_apply)
 
     apply = subcommands.add_parser("apply", help="Apply configured repository setup")
     add_apply_arguments(apply)
