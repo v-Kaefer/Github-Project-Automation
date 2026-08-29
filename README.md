@@ -129,8 +129,8 @@ make setup TARGET=../other-project REPO=owner/other-project OWNER_TYPE=organizat
 | --- | --- | --- |
 | Repository operations inside GitHub Actions | `${{ github.token }}` exposed as `GITHUB_TOKEN` | [Automatic — no custom secret](#automatic-repository-token) |
 | Local labels, milestones, issues, comments, and similar repository operations | valid `gh auth`, `GITHUB_TOKEN`, `GH_TOKEN`, or `PROJECT_SETUP_PAT` | [Manual/configured](#local-authentication) |
-| Local GitHub Projects v2 | `PROJECT_SETUP_PAT` in `.env` | [Manual/configured PAT](#projects-v2-authentication) |
-| GitHub Projects v2 from Actions / PR Sync | repository secret `PROJECT_SETUP_PAT` plus repository variable `PROJECT_SETUP_PROJECT_NUMBER` | [Manual/configured PAT + Actions configuration](#projects-v2-authentication) |
+| Local GitHub Projects v2 | GitHub App credentials (recommended) or `PROJECT_SETUP_PAT` in `.env` | [Manual/configured](#projects-v2-authentication) |
+| GitHub Projects v2 from Actions / PR Sync | GitHub App credentials (recommended) or repository secret `PROJECT_SETUP_PAT`, plus repository variable `PROJECT_SETUP_PROJECT_NUMBER` | [Manual/configured + Actions configuration](#projects-v2-authentication) |
 
 ### Automatic repository token
 
@@ -155,9 +155,9 @@ or a supported token in the environment file. `make doctor` reports which source
 
 ### Projects v2 authentication
 
-Live Project v2 creation/synchronization requires an explicit `PROJECT_SETUP_PAT`; the repository-scoped Actions token is not used as a silent fallback.
+Live Project v2 creation/synchronization requires either GitHub App credentials (`PROJECT_SETUP_APP_ID` plus a private key) or an explicit `PROJECT_SETUP_PAT`. The repository-scoped Actions token is never used as a silent fallback. When App credentials are configured, the minted installation token is used for Projects v2 and no PAT is needed.
 
-For the current GraphQL implementation, create a **personal access token (classic)**:
+If you prefer a PAT, create a **personal access token (classic)**:
 
 1. GitHub profile picture → **Settings**;
 2. **Developer settings** → **Personal access tokens** → **Tokens (classic)**;
@@ -247,7 +247,7 @@ The tool is intentionally conservative because repository setup mixes local file
 - **Persistent location, explicit mutation:** target/repository identity and Project owner type may live in `.env`, but `LIVE=1` and `FORCE=1` are deliberately not persistent defaults.
 - **Preserve target files:** the installer skips existing files unless overwrite is explicitly requested. Existing Makefiles, environment templates, and AI instructions should be reviewed and merged rather than blindly replaced.
 - **No filesystem side effect during install preview:** `init --dry-run` does not create the target directory.
-- **Explicit Project v2 boundary:** live Project v2 operations require `PROJECT_SETUP_PAT`; they do not silently fall back to `github.token`.
+- **Explicit Project v2 boundary:** live Project v2 operations require GitHub App credentials or `PROJECT_SETUP_PAT`; they do not silently fall back to `github.token`.
 - **Project owner namespace safety:** Project v2 operations query only the resolved `user` or `organization` GraphQL namespace instead of querying both for one login.
 - **No credential logging:** diagnostics show credential source/status, never token values.
 - **Safe HTTP behavior:** GitHub requests have a finite timeout and are restricted to `https://api.github.com`.
@@ -256,7 +256,7 @@ The tool is intentionally conservative because repository setup mixes local file
 - **Explicit source identity:** `.project-setup-source` identifies this tool's source repository and is intentionally not installed into target repositories, preventing embedded targets from inheriting source-only validation contracts.
 - **Cross-platform entry points:** `.env` is parsed by Python rather than directly included by Make, keeping quoting and Windows behavior aligned with the CLI.
 
-Current intentional limits: generated issues are not idempotent yet, Project v2 views remain manual, rulesets/branch protection are not created, milestone synchronization inspects at most the first 100 existing milestones, and PR Sync label synchronization is additive rather than destructive. PR Sync Project updates remain optional when their PAT/Project number are not configured.
+Current intentional limits: generated issues are not idempotent yet, Project v2 views remain manual, native rulesets are reconciled only through the explicit `rulesets plan` / `rulesets apply --live --confirm <id>` workflow (never automatically) and classic branch protection is not managed, milestone synchronization inspects at most the first 100 existing milestones, and PR Sync label synchronization is additive rather than destructive. PR Sync Project updates remain optional when their PAT/Project number are not configured.
 
 ## 6. Documentation
 

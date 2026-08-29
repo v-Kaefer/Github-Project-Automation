@@ -38,10 +38,12 @@ jobs:
           PROJECT_SETUP_AUTH: ${{ vars.PROJECT_SETUP_APP_ID != '' && 'app' || 'token' }}
           PROJECT_SETUP_TOKEN: ${{ steps.app-token.outputs.token || secrets.PROJECT_SETUP_PAT }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          RULESETS_MODE: ${{ inputs.mode }}
+          RULESETS_CONFIRMATION: ${{ inputs.confirmation }}
         run: |
           set -euo pipefail
-          if [ "${{ inputs.mode }}" = plan ]; then
+          if [ "$RULESETS_MODE" = plan ]; then
             python -m project_setup rulesets plan --repo "$GITHUB_REPOSITORY"
           else
-            python -m project_setup rulesets apply --repo "$GITHUB_REPOSITORY" --live --confirm "${{ inputs.confirmation }}"
+            python -m project_setup rulesets apply --repo "$GITHUB_REPOSITORY" --live --confirm "$RULESETS_CONFIRMATION"
           fi
