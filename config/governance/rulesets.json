@@ -9,9 +9,8 @@
         {"type": "non_fast_forward"},
         {"type": "deletion"}
       ],
-      "bypassActors": [
-        {"type": "team", "slug": "maintainers", "mode": "pull_request"}
-      ]
+      "_comment_bypassActors": "Optional. Leave empty for personal repos. For orgs, add e.g. {\"type\": \"team\", \"slug\": \"<your-team>\", \"mode\": \"pull_request\"} after confirming the team exists.",
+      "bypassActors": []
     }
   ]
 }

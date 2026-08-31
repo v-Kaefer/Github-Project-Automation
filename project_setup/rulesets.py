@@ -87,7 +87,14 @@ def plan_rulesets(client: GitHubClient, repo: str, path: str) -> tuple[str, list
             continue
         full = client.request_json("GET", f"{API_BASE}/repos/{repo}/rulesets/{existing['id']}")
         actions.append(("unchanged" if _comparison(full) == _comparison(item) else "update", item, int(existing["id"])))
-    plan_id = hashlib.sha256(json.dumps([_comparison(item) for item in desired], sort_keys=True).encode()).hexdigest()[:12]
+    fingerprint = {
+        "repo": repo,
+        "actions": [
+            {"action": action, "id": identifier, "ruleset": _comparison(item)}
+            for action, item, identifier in actions
+        ],
+    }
+    plan_id = hashlib.sha256(json.dumps(fingerprint, sort_keys=True).encode()).hexdigest()[:12]
     for action, item, identifier in actions:
         print(f"{action}: {item['name']}" + (f" (id={identifier})" if identifier else ""))
     print(f"plan-id={plan_id}")

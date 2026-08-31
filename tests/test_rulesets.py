@@ -63,6 +63,23 @@ class RulesetTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "require --confirm"):
             apply_rulesets(_Client(), "owner/repo", str(path), "wrong")
 
+    def test_plan_id_differs_across_repositories(self):
+        directory, path = self.manifest()
+        self.addCleanup(directory.cleanup)
+        plan_a, _ = plan_rulesets(_Client(), "owner/repo-a", str(path))
+        plan_b, _ = plan_rulesets(_Client(), "owner/repo-b", str(path))
+        self.assertNotEqual(plan_a, plan_b)
+
+    def test_plan_id_differs_when_create_becomes_update(self):
+        directory, path = self.manifest()
+        self.addCleanup(directory.cleanup)
+        create_plan, _ = plan_rulesets(_Client(), "owner/repo", str(path))
+        drifted = _Client()
+        drifted.rulesets = [{"name": "GPA: main", "id": 7}]
+        update_plan, actions = plan_rulesets(drifted, "owner/repo", str(path))
+        self.assertEqual(actions[0][0], "update")
+        self.assertNotEqual(create_plan, update_plan)
+
 
 if __name__ == "__main__":
     unittest.main()

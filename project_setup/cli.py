@@ -161,19 +161,22 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 
 def cmd_labels_sync(args: argparse.Namespace) -> int:
-    sync_labels(GitHubClient("") if args.dry_run else require_client(), repo_arg(args.repo), args.file, args.dry_run)
+    repository = repo_arg(args.repo)
+    sync_labels(GitHubClient("") if args.dry_run else require_client(repository), repository, args.file, args.dry_run)
     return 0
 
 
 def cmd_milestones_sync(args: argparse.Namespace) -> int:
-    sync_milestones(GitHubClient("") if args.dry_run else require_client(), repo_arg(args.repo), args.file, args.dry_run)
+    repository = repo_arg(args.repo)
+    sync_milestones(GitHubClient("") if args.dry_run else require_client(repository), repository, args.file, args.dry_run)
     return 0
 
 
 def cmd_issues_generate(args: argparse.Namespace) -> int:
+    repository = repo_arg(args.repo)
     generate_issues(
-        None if args.dry_run else require_client(),
-        repo_arg(args.repo),
+        None if args.dry_run else require_client(repository),
+        repository,
         args.file,
         args.dry_run,
         args.link_subissues,
@@ -224,7 +227,8 @@ def cmd_project_sync(args: argparse.Namespace) -> int:
 
 
 def cmd_issue_milestones_sync(args: argparse.Namespace) -> int:
-    sync_issue_milestones(require_client(), repo_arg(args.repo), args.clear_not_planned, args.dry_run)
+    repository = repo_arg(args.repo)
+    sync_issue_milestones(require_client(repository), repository, args.clear_not_planned, args.dry_run)
     return 0
 
 
@@ -252,7 +256,7 @@ def cmd_validate_pr(args: argparse.Namespace) -> int:
         repository = repo_arg(args.repo)
         if not args.pr_number:
             raise SystemExit("--comment requires --pr-number")
-        upsert_validation_comment(require_client(), repository, args.pr_number, findings)
+        upsert_validation_comment(require_client(repository), repository, args.pr_number, findings)
     return 1 if findings else 0
 
 
@@ -268,13 +272,14 @@ def cmd_apply(args: argparse.Namespace) -> int:
         "link_subissues": args.link_subissues if args.link_subissues is not None else defaults.get("linkSubissues", False),
         "owner_type": args.owner_type,
     }
+    repository = repo_arg(args.repo)
     if values["dry_run"]:
         client = GitHubClient("")
     elif values["run_project_creation"]:
-        client = require_project_client()
+        client = require_project_client(repository)
     else:
-        client = require_client()
-    run_project_setup(client, repo_arg(args.repo), config, **values)
+        client = require_client(repository)
+    run_project_setup(client, repository, config, **values)
     return 0
 
 
