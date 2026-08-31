@@ -1,0 +1,49 @@
+name: GPA rulesets
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "plan is read-only; apply requires the matching plan ID"
+        required: true
+        type: choice
+        default: plan
+        options: [plan, apply]
+      confirmation:
+        description: "Required only for apply: the plan-id printed by a previous plan"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: app-token
+        if: ${{ vars.PROJECT_SETUP_APP_ID != '' }}
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.PROJECT_SETUP_APP_ID }}
+          private-key: ${{ secrets.PROJECT_SETUP_APP_PRIVATE_KEY }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Plan or apply declared rulesets
+        env:
+          PROJECT_SETUP_AUTH: ${{ vars.PROJECT_SETUP_APP_ID != '' && 'app' || 'token' }}
+          PROJECT_SETUP_TOKEN: ${{ steps.app-token.outputs.token || secrets.PROJECT_SETUP_PAT }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RULESETS_MODE: ${{ inputs.mode }}
+          RULESETS_CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          if [ "$RULESETS_MODE" = plan ]; then
+            python -m project_setup rulesets plan --repo "$GITHUB_REPOSITORY"
+          else
+            python -m project_setup rulesets apply --repo "$GITHUB_REPOSITORY" --live --confirm "$RULESETS_CONFIRMATION"
+          fi

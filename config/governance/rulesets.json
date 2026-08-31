@@ -1,0 +1,16 @@
+{
+  "rulesets": [
+    {
+      "name": "GPA example: protected main",
+      "enforcement": "active",
+      "refName": {"include": ["refs/heads/main"], "exclude": []},
+      "rules": [
+        {"type": "pull_request", "parameters": {"required_approving_review_count": 1, "dismiss_stale_reviews_on_push": true, "require_code_owner_review": false, "require_last_push_approval": false, "required_review_thread_resolution": false}},
+        {"type": "non_fast_forward"},
+        {"type": "deletion"}
+      ],
+      "_comment_bypassActors": "Optional. Leave empty for personal repos. For orgs, add e.g. {\"type\": \"team\", \"slug\": \"<your-team>\", \"mode\": \"pull_request\"} after confirming the team exists.",
+      "bypassActors": []
+    }
+  ]
+}

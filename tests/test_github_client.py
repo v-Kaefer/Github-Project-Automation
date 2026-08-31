@@ -5,7 +5,7 @@ import urllib.error
 import unittest
 from unittest.mock import patch
 
-from project_setup.github import API_BASE, HTTP_TIMEOUT_SECONDS, GitHubClient, GitHubRequestError
+from project_setup.github import API_BASE, HTTP_TIMEOUT_SECONDS, GitHubClient, GitHubRequestError, get_token_source
 
 
 class _Response:
@@ -42,6 +42,12 @@ class GitHubClientTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Unsupported GitHub API URL"):
                 client.request_json("GET", "https://example.com/resource")
         urlopen.assert_not_called()
+
+    def test_workflow_app_token_is_preferred_without_private_key_material(self):
+        with patch.dict("os.environ", {"PROJECT_SETUP_AUTH": "app", "PROJECT_SETUP_TOKEN": "short-lived-token"}, clear=True):
+            token, source = get_token_source("owner/repository")
+        self.assertEqual(token, "short-lived-token")
+        self.assertEqual(source, "github-app")
 
 
 if __name__ == "__main__":
